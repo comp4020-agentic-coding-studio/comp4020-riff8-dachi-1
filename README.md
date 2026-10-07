@@ -29,7 +29,7 @@ A world moves on when every deposit on it is gone, for everyone at once. The sur
 | Mars | regolith, iron, buried ice | Nothing runs outside a dome's air, and domes drink the same ice your datacentres need. |
 | The Sun | plasma, magnetics, shade | Collectors pour in power and heat; past the limit, scoops throttle until radiators shed it. The star dims as you take it. |
 | The Solar System | volatiles, asteroid metal, comet ice | No sunlight now. Every machine draws on the Bottled Sun you saved, and it doesn't refill. Miners only ship if relays link them to the Depot. |
-| The Universe | starlight, stellar cores, dark cold | Your spent worlds run as World Engines. The host can render one down for a burst of energy, forever. |
+| The Universe | starlight, stellar cores, dark cold | Your spent worlds run as World Engines. The host can render one down for a burst of energy, forever. And if everyone here agrees, you can stop, and leave the rest alone. |
 
 Spent Earth and Mars float in the Solar System as grey remnants, and the Solar System sits in a corner of the Universe. Nothing you've finished comes back fresh.
 

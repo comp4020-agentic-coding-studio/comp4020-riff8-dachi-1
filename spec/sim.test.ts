@@ -272,6 +272,50 @@ describe("commands", () => {
   });
 });
 
+describe("the restraint ending", () => {
+  const toUniverse = (s: RoomState, ch: Changes): void => {
+    while (STAGES[s.stage].id !== "universe" || s.phase.k !== "play") {
+      if (s.phase.k === "play") harvestBot(s, ch, "a");
+      tick(s, ch);
+    }
+  };
+
+  it("ends the campaign with stock left only when everyone here agrees, and keeps the books", () => {
+    const { s, ch } = room("rapid", ["a", "b"]);
+    toUniverse(s, ch);
+    expect(applyCommand(s, "a", id(), s.gen, { k: "stop", on: true }, ch)).toEqual({ ok: true });
+    expect(s.phase.k).toBe("play");
+    // harvesting takes a vote back
+    const i = depositIdx(s);
+    const [x, y] = at(s, i);
+    stand(s, "a", x, y);
+    s.players.a.nextHarvest = 0;
+    applyCommand(s, "a", id(), s.gen, { k: "harvest", x, y }, ch);
+    expect(s.players.a.stop).toBe(false);
+    applyCommand(s, "a", id(), s.gen, { k: "stop", on: true }, ch);
+    applyCommand(s, "b", id(), s.gen, { k: "stop", on: true }, ch);
+    expect(s.phase).toEqual({ k: "ended", how: "restraint" });
+    expect(totalRemaining(s)).toBeGreaterThan(0);
+    expect(ledgerHolds(s)).toBe(true);
+    expect(s.history.at(-1)!.stage).toBe("universe");
+  });
+
+  it("never ends because a holdout's connection dropped; someone still here confirms", () => {
+    const { s, ch } = room("rapid", ["a", "b"]);
+    toUniverse(s, ch);
+    applyCommand(s, "a", id(), s.gen, { k: "stop", on: true }, ch);
+    leave(s, "b", ch);
+    expect(s.phase.k).toBe("play");
+    applyCommand(s, "a", id(), s.gen, { k: "stop", on: true }, ch);
+    expect(s.phase).toEqual({ k: "ended", how: "restraint" });
+  });
+
+  it("isn't offered before the last world", () => {
+    const { s, ch } = room();
+    expect(applyCommand(s, "a", id(), s.gen, { k: "stop", on: true }, ch).ok).toBe(false);
+  });
+});
+
 describe("stage transitions", () => {
   const exhaust = (s: RoomState, ch: Changes): void => {
     while (totalRemaining(s) > 0 && s.tick < 50_000) {

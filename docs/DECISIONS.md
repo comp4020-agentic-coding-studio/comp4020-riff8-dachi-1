@@ -30,4 +30,6 @@ Plenty keeps Hearth's attachment through landmarks, player-named places and wild
 - **Hand harvest slowed to 0.8 s and stocks deepened about 1.4×** after measuring a two-player Earth at under three minutes. See [`DESIGN.md`](DESIGN.md#pacing).
 - **Movement sent as compact tuples** after measuring bandwidth. See [`TESTING.md`](TESTING.md).
 - **Spent deposits are buildable.** Found playtesting: a stump refused a plaza because the tile still had a deposit family with zero stock.
-- **No restoration mechanic in this version.** Regrowth that doesn't refill stock risks reading as an undo; one that does breaks the finite-stock rule. Left for a collective-choice design with real costs.
+- **No restoration mechanic in this version.** Regrowth that doesn't refill stock risks reading as an undo; one that does breaks the finite-stock rule.
+- **Restraint is a unanimous vote, offered only in the Universe.** Unanimous among those present, so it's collective without letting absentees block it; consuming withdraws your vote; a dropped connection never completes it. Offered last so it saves something real without undoing the earlier worlds. The full consumption ending stays available.
+- **Fixes from an independent review** (a subagent auditing `server/` and `shared/`): a message that crashed the process, rooms that filled forever, receipts for refused commands, a resync that doubled log lines, a city served for free, unlimited room creation. All fixed with regression tests where they're testable.

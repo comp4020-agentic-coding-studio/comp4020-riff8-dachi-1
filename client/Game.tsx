@@ -96,7 +96,7 @@ export default function Game({ room, name }: { room: string; name: string }): Re
     snd.life = averageLife(s);
     snd.machines = s.buildings.filter((b) => b.status === "ok" && b.owner).length;
     snd.stage = s.stage;
-    snd.ended = s.phase.k === "ended";
+    snd.ended = s.phase.k === "ended" && s.phase.how !== "restraint";
   });
   useEffect(() => soundRef.current.setMix(mix), [mix]);
 
@@ -329,6 +329,7 @@ export default function Game({ room, name }: { room: string; name: string }): Re
             <StagePanel s={s} />
             <Economy s={s} />
             {st.id === "earth" && s.phase.k === "play" && <Memo s={s} />}
+          {st.id === "universe" && s.phase.k === "play" && <LastFrontier s={s} you={client.you} onVote={(on) => client.send({ k: "stop", on })} />}
           </div>
           <RoomPanel s={s} client={client} host={host} />
           <BuildBar s={s} view={view} onPick={chooseBuild} onTool={setTool} />
@@ -540,6 +541,30 @@ function Memo({ s }: { s: Snapshot }): ReactNode {
   );
 }
 
+function LastFrontier({ s, you, onVote }: { s: Snapshot; you: string; onVote: (on: boolean) => void }): ReactNode {
+  const here = Object.values(s.players).filter((p) => p.connected);
+  const ready = here.filter((p) => p.stop).length;
+  const mine = !!s.players[you]?.stop;
+  const left = FAMILIES.reduce((a, f) => a + s.ledger[f].remaining, 0);
+  return (
+    <div className="panel memo">
+      <h2>The last frontier</h2>
+      <p className="small">
+        {left} units of the Universe are left. You could stop here and leave them alone, for good. Everyone here has to agree; harvesting or building takes your vote back.
+      </p>
+      <p className="small">
+        <strong>
+          {ready} of {here.length}
+        </strong>{" "}
+        here want to stop.
+      </p>
+      <button type="button" aria-pressed={mine} onClick={() => onVote(!mine || ready === here.length)}>
+        {mine ? (ready === here.length ? "Stop for good" : "Keep going instead") : "Stop here"}
+      </button>
+    </div>
+  );
+}
+
 function BuildBar({ s, view, onPick, onTool }: { s: Snapshot; view: View; onPick: (t: BuildingType) => void; onTool: (t: Tool) => void }): ReactNode {
   const st = STAGES[s.stage];
   return (
@@ -713,13 +738,29 @@ function Ending({ s }: { s: Snapshot }): ReactNode {
         </button>
       </div>
     );
+  const restraint = s.phase.k === "ended" && s.phase.how === "restraint";
+  const left = FAMILIES.reduce((a, f) => a + s.ledger[f].remaining, 0);
+  const hands = `${Object.keys(s.players).length} pair${Object.keys(s.players).length === 1 ? "" : "s"} of hands`;
   return (
     <div className="overlay center ending" role="dialog" aria-labelledby="end-h">
-      <div className="card dark">
-        <h2 id="end-h">There is nothing left.</h2>
-        <p>Five worlds, {total.toLocaleString("en-AU")} units of everything, consumed by {Object.keys(s.players).length} pair{Object.keys(s.players).length === 1 ? "" : "s"} of hands.</p>
-        <p>The machine runs perfectly. It has no input. Somewhere in its last datacentre, a process is still searching for a next frontier.</p>
-        <p className="search" aria-hidden="true">searching… 0 found</p>
+      <div className={`card ${restraint ? "dawn" : "dark"}`}>
+        {restraint ? (
+          <>
+            <h2 id="end-h">You stopped.</h2>
+            <p>
+              Four worlds and most of a fifth, {total.toLocaleString("en-AU")} units of everything, consumed by {hands}. {left.toLocaleString("en-AU")} units of the Universe are
+              still out there, and will stay there.
+            </p>
+            <p>The Cooperative's machine idles. It could have finished. Nobody asked it to.</p>
+          </>
+        ) : (
+          <>
+            <h2 id="end-h">There is nothing left.</h2>
+            <p>Five worlds, {total.toLocaleString("en-AU")} units of everything, consumed by {hands}.</p>
+            <p>The machine runs perfectly. It has no input. Somewhere in its last datacentre, a process is still searching for a next frontier.</p>
+            <p className="search" aria-hidden="true">searching… 0 found</p>
+          </>
+        )}
         <h3>What was named, and what became of it</h3>
         <ul className="archive">
           {s.archive.map((a, i) => (

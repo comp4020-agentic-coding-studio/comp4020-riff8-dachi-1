@@ -21,6 +21,9 @@ What was checked, how, and what it showed. Targets and results are kept apart, a
 - no building on a deposit with stock left; a spent deposit can be built on
 - names are stripped of control characters and capped
 - mutations are refused during a transition, and the next world admits them
+- only applied commands are receipted, so a refused command can be honestly retried
+- seats count connected players; departed identities never fill a room, and past 32 the longest-gone is forgotten
+- the restraint ending: only in the Universe, only when everyone present agrees, harvesting withdraws a vote, a holdout's dropped connection never completes it, and the ledger still balances with stock left
 - a crash mid-transition (state serialised at the Sun's boundary, restored, resumed) yields the same next world, the same generation and the same Bottled Sun as the uninterrupted run: no duplicate generation, no doubled carryover
 
 **`spec/server.test.ts`**, the real server over HTTP and WebSocket:
@@ -30,13 +33,14 @@ What was checked, how, and what it showed. Targets and results are kept apart, a
 - **real time**: one player's harvest reaches a second open session in under a second, without a reload
 - a returning browser's token restores its identity; an unknown token gets a new player
 - a resent harvest applies once (acknowledged twice); a command from a stale incarnation is refused with a fresh snapshot
+- messages built to throw when coerced (an `id` or `n` that's an object with a broken `toString`) are refused, and the server and room carry on: an independent review found this crashed the whole process
 - malformed messages are refused without disturbing the room
 - **restart recovery**: a private server on its own data directory is stopped with SIGTERM and restarted; the player rejoins as themselves under a new incarnation and the harvested tile is as they left it
 - **crash recovery**: the same after SIGKILL, once the 5 s save interval has passed
 
 **`spec/invariants.test.ts`**, the course's: `/` answers and `/readme/` publishes this README with every heading.
 
-24 tests, all passing locally and against the production Docker image.
+30 tests, all passing locally and against the production Docker image.
 
 ## Multiplayer playthroughs
 
@@ -99,9 +103,8 @@ Answered from bot runs and browser play, not from human playtesters, which this 
 ## Next development, in priority order
 
 1. Human playtests of the first ten minutes and the ending, then tuning from what people actually do.
-2. A restraint path: a collective vote, in the Universe, to leave the last galaxy unconsumed, with a real cost and a different ending.
-3. Interest management (send each client only nearby tile changes) before maps grow.
-4. Sprite art for buildings and avatars, replacing the procedural shapes one family at a time (see [`ASSETS.md`](ASSETS.md)).
-5. Host moderation: remove a player, lock a room to new joiners.
-6. A photo album kept per room, so the archive has pictures, not just names.
-7. Touch controls.
+2. Interest management (send each client only nearby tile changes) before maps grow.
+3. Sprite art for buildings and avatars, replacing the procedural shapes one family at a time (see [`ASSETS.md`](ASSETS.md)).
+4. Host moderation: remove a player, lock a room to new joiners.
+5. A photo album kept per room, so the archive has pictures, not just names.
+6. Touch controls.

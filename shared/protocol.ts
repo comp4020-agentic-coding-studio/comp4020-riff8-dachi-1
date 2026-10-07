@@ -58,6 +58,8 @@ export interface Player {
   nextHarvest: number;
   nextEmote: number;
   marks: number;
+  /** in the Universe: this player wants to stop and leave the rest alone */
+  stop?: boolean;
   stats: PlayerStats;
 }
 
@@ -102,7 +104,7 @@ export interface LogEntry {
 export type Phase =
   | { k: "play" }
   | { k: "transition"; until: number; summary: StageSummary }
-  | { k: "ended" };
+  | { k: "ended"; how?: "consumed" | "restraint" };
 
 /** Everything a room is. JSON-serialisable: this is exactly what gets saved. */
 export interface RoomState {
@@ -144,7 +146,8 @@ export type Command =
   | { k: "build"; x: number; y: number; type: BuildingType }
   | { k: "demolish"; x: number; y: number }
   | { k: "emote"; e: Emote }
-  | { k: "mark"; x: number; y: number; name: string };
+  | { k: "mark"; x: number; y: number; name: string }
+  | { k: "stop"; on: boolean };
 
 export type ClientMsg =
   | { t: "hello"; v: number; room: string; token?: string; name: string }

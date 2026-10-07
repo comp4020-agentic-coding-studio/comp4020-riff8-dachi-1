@@ -990,7 +990,7 @@ export class Renderer {
       ctx.fillStyle = `rgba(255,255,255,${1 - since / 1500})`;
       ctx.fillRect(0, 0, this.cam.w, this.cam.h);
     }
-    if (s.phase.k === "ended") {
+    if (s.phase.k === "ended" && s.phase.how !== "restraint") {
       ctx.fillStyle = "rgba(0,0,0,0.35)";
       ctx.fillRect(0, 0, this.cam.w, this.cam.h);
     }

@@ -68,7 +68,7 @@ The renderer turns that into grass that drains from green to brown, wilting tree
 
 **Memory.** Landmarks are named tiles. When a named tile is harvested bare, burnt, built over, or left behind at the end of a world, an archive line records it ("The Old Oak was harvested bare", "Picnic Hill became a Furnace"). Every transition shows that world's ledger and its lost places; the ending lists all of them.
 
-Restoration isn't in this version: a cosmetic regrowth that didn't refill stock would only blur the point. It's on the next-development list as a collective choice with a real cost.
+Restoration isn't in this version: a cosmetic regrowth that didn't refill stock would only blur the point. The one collective act of conservation is the restraint ending (below).
 
 ## Stages and transitions
 
@@ -81,6 +81,8 @@ Each world is data in `STAGES` plus one mechanic switch in the economy tick. Map
 **The Sun's legacy.** Every unit of plasma extracted becomes 4 units of the Bottled Sun. The Solar System and Universe have no solar power at all; every machine there draws on that finite reserve, so consuming the Sun determines how long automation lasts afterwards. When it runs out, machines go idle and the room gathers by hand again. In the Universe the host can render down a World Engine (one of your spent worlds, running as compute) for 160 energy, a one-way act recorded in the archive.
 
 **The ending.** When the Universe is empty the room enters `ended` for good. The camera pulls back over the dark map, the music stops (ambience and hum continue), and a card reads: "There is nothing left. The machine runs perfectly. It has no input. Somewhere in its last datacentre, a process is still searching for a next frontier." Below it, a search line blinks "0 found", then the archive of named places and who did what. Players can put the card aside to look at the dead world. A new campaign is an explicit button that makes a new room; the finished one stays finished.
+
+**The restraint ending.** In the Universe, and only there, a panel offers to stop: "N units of the Universe are left. You could stop here and leave them alone, for good." Each player votes; harvesting or building takes your vote back, so you can't vote to stop with your hands still in the till. When everyone present agrees, the campaign ends with the rest still out there (recorded in the ledger as _remaining_ and in the archive as "left alone"), the music keeps playing, and the card reads "You stopped. The Cooperative's machine idles. It could have finished. Nobody asked it to." Absent players can't block it, and a holdout's dropped connection never triggers it: if they leave, someone still here confirms by voting again. It's irreversible and it costs the full ending, so it only means something to a group that has argued about it. Restraint is offered only at the last world on purpose: by then every earlier world is already spent, so stopping saves something without pretending to undo anything.
 
 ## Multiplayer rules
 

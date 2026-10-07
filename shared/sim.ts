@@ -343,6 +343,7 @@ function mutate(s: RoomState, p: Player, c: Exclude<Command, { k: "move" }>, ch:
       }
       if (!tile.d || tile.amt <= 0) return no("nothing to harvest there");
       const took = takeFrom(s, idx, PACES[s.pace].harvestYield, ch);
+      withdraw(s, p, ch);
       p.stats.harvested += took;
       p.nextHarvest = s.tick + HARVEST_COOLDOWN_TICKS;
       p.act = { k: "harvest", until: s.tick + 4 };
@@ -369,6 +370,7 @@ function mutate(s: RoomState, p: Player, c: Exclude<Command, { k: "move" }>, ch:
       }
       ch.buildings.add(b.id);
       ch.meta = true;
+      withdraw(s, p, ch);
       p.stats.built++;
       p.act = { k: "build", until: s.tick + 6 };
       log(s, ch, `${p.name} started a ${buildingName(st, c.type)}.`);
@@ -425,9 +427,57 @@ function mutate(s: RoomState, p: Player, c: Exclude<Command, { k: "move" }>, ch:
       log(s, ch, `${p.name} named a place ${name}.`);
       return OK;
     }
+    case "stop": {
+      if (STAGES[s.stage].id !== "universe") return no("there's always another world, until the last one");
+      if (typeof c.on !== "boolean") return no("malformed vote");
+      // a dropped connection never ends the campaign: if a holdout leaves, someone
+      // still here confirms by voting again
+      if (p.stop !== c.on) {
+        p.stop = c.on;
+        log(s, ch, c.on ? `${p.name} wants to stop here and leave the rest alone.` : `${p.name} wants to keep going.`);
+        ch.meta = true;
+      }
+      checkRestraint(s, ch);
+      return OK;
+    }
     default:
       return no("unknown command");
   }
+}
+
+function withdraw(s: RoomState, p: Player, ch: Changes): void {
+  if (!p.stop) return;
+  p.stop = false;
+  log(s, ch, `${p.name} went back to work.`);
+}
+
+/**
+ * The restraint ending: if everyone present in the Universe agrees to stop,
+ * the campaign ends with what's left still out there. It can't be undone, and
+ * absent players can't block it (or make it happen) by staying away.
+ */
+export function checkRestraint(s: RoomState, ch: Changes): void {
+  if (s.phase.k !== "play" || STAGES[s.stage].id !== "universe") return;
+  const here = Object.values(s.players).filter((p) => p.connected);
+  if (here.length === 0 || !here.every((p) => p.stop)) return;
+  const left = totalRemaining(s);
+  if (left === 0) return;
+  s.history.push({
+    stage: "universe",
+    ledger: structuredClone(s.ledger),
+    lifeStart: s.lifeStart,
+    lifeEnd: averageLife(s),
+    buildings: s.buildings.filter((b) => b.owner).length,
+    ticks: s.tick - s.stageStartTick,
+    lost: s.archive.filter((a) => a.stage === "universe").map((a) => a.name),
+  });
+  for (const t of s.tiles) if (t.mark) s.archive.push({ stage: "universe", name: t.mark.name, fate: "is still there" });
+  s.archive.push({ stage: "universe", name: `${left} units of the Universe`, fate: "were left alone" });
+  s.phase = { k: "ended", how: "restraint" };
+  for (const p of Object.values(s.players)) p.dx = p.dy = 0;
+  log(s, ch, "You stopped. The rest is still out there.");
+  ch.meta = true;
+  ch.boundary = true;
 }
 
 export function facingTo(dx: number, dy: number, fallback: number): number {
@@ -464,7 +514,7 @@ function checkExhausted(s: RoomState, ch: Changes): void {
 function nextStage(s: RoomState, ch: Changes): void {
   const leaving = STAGES[s.stage];
   if (s.stage === STAGES.length - 1) {
-    s.phase = { k: "ended" };
+    s.phase = { k: "ended", how: "consumed" };
     for (const p of Object.values(s.players)) p.dx = p.dy = 0;
     log(s, ch, "The engine keeps searching for a next frontier. There isn't one.");
     ch.meta = true;
