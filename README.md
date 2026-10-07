@@ -1,65 +1,68 @@
-# Long Scroll
+# Plenty
 
-A shared scroll. Anyone who visits can add one stroke of ink to it &mdash; a
-colour, and an optional short note. Nothing on it is ever edited or removed.
-Visit again and your own strokes are still there, marked as yours.
+A cosy multiplayer game about having enough, and never stopping.
 
-## What good means here, for now
+You and up to seven friends arrive on a little meadow island: a pond with a heron, a few groves, an old oak, a hill for picnics. You gather timber and stone by hand, build cottages, power them, and teach a datacentre to do the gathering for you. It works beautifully. When the island is used up, the Plenty Cooperative has another world ready: Mars, then the Sun itself, then the whole Solar System, then the Universe. There is no sixth.
 
-This is the first version of an argument I expect to keep rewriting. Right
-now it says: **good, at this size, means small enough that everyone's mark is
-still legible, and durable enough that coming back is worth it.**
+The game is built from a pod's brief, _Consume the Universe_: let players enjoy building the machine, then notice what the machine has consumed.
 
-I take my definition of "small enough" from writing about software built for
-a handful of people rather than a market. Robin Sloan's
-[_An App Can Be a Home-Cooked Meal_](https://www.robinsloan.com/notes/home-cooked-app/)
-argues that an app made for people you actually know can skip almost
-everything a product needs; his
-[five-year follow-up](https://www.robinsloan.com/lab/five-years-of-home-cooked-apps/)
-adds that the property worth protecting longest is sovereignty: who the app
-answers to. Ben Hoyt's
-[_The small web is beautiful_](https://benhoyt.com/writings/the-small-web-is-beautiful/)
-makes the same case from the stack down &mdash; fewer moving parts is most of
-why small software stays legible. Maggie Appleton's
-[_Home-Cooked Software and Barefoot Developers_](https://maggieappleton.com/home-cooked-software)
-extends Sloan's essay into a claim I want this scroll to test: the software
-worth making for a small group is the software the group could not buy,
-because nobody else needs exactly this.
+## How to play
 
-A scroll fits that brief oddly well. It has no feed, no ranking, no
-expiring anything: everyone who has ever added a stroke is still legible in
-it, in the order they arrived, the way a real scroll accumulates hands over
-years rather than resetting each session.
+Start a world from the front page and send the invite link (or the five-letter room code) to friends. No account: your browser remembers who you are in each room.
 
-**What I chose not to build, this week:** accounts (a browser is a person,
-distinguished by an anonymous cookie, nothing more); editing or deleting a
-stroke once added (the scroll is append-only, on purpose &mdash; that's a
-claim, not an oversight); live updates (the brief stages real-time for the
-next crit, so for now the shared state is real &mdash; every stroke is a row
-every visitor's next load can see &mdash; but you see it on reload, not
-pushed to an open tab); any limit on how many strokes one hand can add
-(a guestbook you can only sign once is a worse guestbook).
+- **Walk** with WASD or the arrow keys. Zoom with the wheel or `+`/`-`.
+- **Harvest** by holding `E` (or `Space`) near a tree, rock or pond, or by clicking it. Everything goes into the room's shared stockpile.
+- **Build** with `1`--`6`. A ghost shows the footprint, green where it fits and red with the reason where it doesn't. Click to place it, or press `Enter` for the tile you're facing. `Esc` cancels.
+- **Help raise** a building site by pressing `E` beside it: several people building together finish faster.
+- `I` inspects a building (what it needs, what it makes, why it's idle), `X` takes one down for half its cost back, `N` names a favourite place, `V` surveys every deposit left, `P` saves a photo, and `Shift`+`1`--`6` emotes.
+- `H` opens help in the game.
 
-## What's enforced and what's judged
+Start with the Cooperative memo in the corner: gather, build cottages, power them, build a datacentre, put a harvester beside a grove. The stockpile panel tells you what most of your idle machines are waiting for.
 
-Enforced, in `spec/`: a stroke's colour must be one of the six the form
-offers (never an arbitrary string), a note is capped at 140 characters
-server-side (not just by the input's `maxlength`), a returning hand's
-past strokes are still in the response after a fresh server restart, no
-method, from any hand, edits or deletes a stroke once it's stored, the page
-tells you in text (not just ink) which strokes are yours, and every control
-on it is a native, labelled form element in the tab order.
+A world moves on when every deposit on it is gone, for everyone at once. The survey arrow points at the nearest remaining deposit, so the last few never turn into a hunt.
 
-Judged, by a visitor reading this page: whether the scroll reads as one
-continuous, shared object rather than a list of comments; whether finding
-your own old stroke feels like the point, not an afterthought; and whether
-six ink colours and a 140-character note are enough constraint to keep this
-feeling like a scroll and not a chat log.
+## The five worlds
 
-## Multi-user, for now
+| World | What you consume | What's different |
+| --- | --- | --- |
+| Earth | timber, stone, fresh water | Furnaces are strong, but their smoke kills groves and browns the land. Sun Gardens are clean and slow. |
+| Mars | regolith, iron, buried ice | Nothing runs outside a dome's air, and domes drink the same ice your datacentres need. |
+| The Sun | plasma, magnetics, shade | Collectors pour in power and heat; past the limit, scoops throttle until radiators shed it. The star dims as you take it. |
+| The Solar System | volatiles, asteroid metal, comet ice | No sunlight now. Every machine draws on the Bottled Sun you saved, and it doesn't refill. Miners only ship if relays link them to the Depot. |
+| The Universe | starlight, stellar cores, dark cold | Your spent worlds run as World Engines. The host can render one down for a burst of energy, forever. |
 
-A person is whoever's browser holds a given anonymous `hand` cookie &mdash;
-no account, no name required. Everyone sees the same scroll; there is no
-private view. What "real-time" and "several hands at once" mean here is
-still being decided, and the next crit is where that gets written down and
-defended.
+Spent Earth and Mars float in the Solar System as grey remnants, and the Solar System sits in a corner of the Universe. Nothing you've finished comes back fresh.
+
+## What the game is arguing
+
+Every convenience has a dependency. A datacentre gives you compute, which runs harvesters, which empty the land faster, which needs more power, which on Earth means furnaces, whose smoke burns the groves you were going to harvest anyway. The game never stops you and never lectures you. It shows the cost in the land (grass browns, trees become stumps, the pond shrinks to mud, the birds thin out and the birdsong with them) and it keeps a short archive of every named place and what became of it. The ending reads that archive back to you.
+
+The design document, [`docs/DESIGN.md`](docs/DESIGN.md), covers the economy, pacing, stages and ending in detail.
+
+## How it works
+
+One Node process on Fly.io owns every room's simulation and speaks WebSocket; browsers render the world and send intentions (move, harvest, build). The browser app is Next.js, exported to static files that the same process serves, with the world drawn on a Canvas 2D in its own frame loop. Rooms persist as snapshots in SQLite on the Fly volume.
+
+- [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md): the stack, the protocol, authority, persistence, deployment and recovery
+- [`docs/DECISIONS.md`](docs/DECISIONS.md): the decision log, including the creative directions weighed at the start
+- [`docs/adr/0001-empty-rooms-pause.md`](docs/adr/0001-empty-rooms-pause.md): what a player finds when they come back
+- [`docs/TESTING.md`](docs/TESTING.md): what was tested, how, and what was measured
+- [`docs/ASSETS.md`](docs/ASSETS.md): where every picture and sound comes from, and how to replace them
+
+## Running it
+
+You need the versions in `mise.toml` (Node 24, pnpm 11).
+
+```sh
+pnpm install
+pnpm build          # Next.js shell -> out/
+pnpm start          # game server on :8080 (PORT and DATA_DIR override)
+```
+
+Then open <http://localhost:8080>. `pnpm check` typechecks and runs the spec against the running server (set `APP_URL` if it isn't on :8080). `node scripts/playbot.ts <ROOM> [url] [name]` joins a room with a bot that plays it, which is the quickest way to see later stages or fill a room.
+
+The rapid preset (a button on the front page) runs the same rules with the economy five times faster and a hand harvest worth ten. A solo campaign takes about ten minutes on it.
+
+## Known limits
+
+Desktop browsers with a keyboard first; it renders on a phone but isn't playable there. One server process and one Fly machine host every room, so a deploy or crash pauses all rooms for a few seconds and can roll back up to five seconds of play. There's no text chat by design (emotes only), so moderation is limited to the host taking down buildings. The full list, and what to build next, is in [`docs/TESTING.md`](docs/TESTING.md).
