@@ -287,6 +287,12 @@ export default function Game({ room, name }: { room: string; name: string }): Re
   const onClick = (e: React.PointerEvent<HTMLCanvasElement>): void => {
     if (e.button !== 0) return;
     onPointer(e);
+    // a tall building is picked by what you see of it, not only its footprint
+    if (view.tool === "harvest" || view.tool === "inspect" || view.tool === "demolish") {
+      const rect = e.currentTarget.getBoundingClientRect();
+      const b = rendererRef.current?.pickBuilding(e.clientX - rect.left, e.clientY - rect.top);
+      if (b) return act(b.x, b.y);
+    }
     if (view.hover) act(view.hover[0], view.hover[1]);
   };
 

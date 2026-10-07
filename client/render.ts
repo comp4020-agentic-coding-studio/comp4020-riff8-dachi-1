@@ -111,6 +111,29 @@ export class Renderer {
     return screenToTile(this.cam, sx, sy);
   }
 
+  /** The front-most building whose drawn volume (not just its footprint) is under the pointer. */
+  pickBuilding(sx: number, sy: number): Building | null {
+    const s = this.client.state;
+    if (!s) return null;
+    let best: Building | null = null;
+    let depth = -Infinity;
+    for (const b of s.buildings) {
+      const n = BUILDINGS[b.type].size;
+      const [T, R, B, L] = this.corners(b.x, b.y, n);
+      const h = BUILD_LOOK[b.type].h * this.cam.zoom + (b.type === "habitat" || b.type === "engine" ? 14 * this.cam.zoom : 0);
+      const hex: [number, number][] = [[T[0], T[1] - h], [R[0], R[1] - h], R, B, L, [L[0], L[1] - h]];
+      let inside = false;
+      for (let i = 0, j = hex.length - 1; i < hex.length; j = i++) {
+        const [xi, yi] = hex[i];
+        const [xj, yj] = hex[j];
+        if (yi > sy !== yj > sy && sx < ((xj - xi) * (sy - yi)) / (yj - yi) + xi) inside = !inside;
+      }
+      const d = b.x + b.y + (n - 1) * 2;
+      if (inside && d > depth) [best, depth] = [b, d];
+    }
+    return best;
+  }
+
   /** The tile in front of the avatar: where keyboard building and harvesting aim. */
   facingTile(): [number, number] | null {
     const s = this.client.state;

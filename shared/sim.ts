@@ -58,13 +58,19 @@ function ledgerFor(tiles: Tile[]): Ledger {
 }
 
 /**
- * A world's coolant is its water table: as it's drawn down, every tile's life
- * is capped lower, so the whole land dries, not just the tiles touched.
- * Derived from the ledger, so both sides compute it and it costs no traffic.
+ * The land holds only as much life as its world has left: every tile's life
+ * is capped by how much of the world remains (60%) and how much of its water,
+ * its coolant, remains (40%). So the whole land dries as it's consumed, in
+ * whatever order, not just the tiles anyone touched, and draining the pond
+ * costs more than its share. Derived from the ledger on both sides, so it
+ * costs no traffic.
  */
 export const lifeCap = (ledger: Ledger): number => {
-  const c = ledger.coolant;
-  return Math.round(15 + 85 * (c.initial ? c.remaining / c.initial : 0));
+  const frac = (rem: number, init: number): number => (init ? rem / init : 0);
+  const total = FAMILIES.reduce((a, f) => a + ledger[f].remaining, 0);
+  const initial = FAMILIES.reduce((a, f) => a + ledger[f].initial, 0);
+  const left = 0.6 * frac(total, initial) + 0.4 * frac(ledger.coolant.remaining, ledger.coolant.initial);
+  return Math.round(15 + 85 * left);
 };
 
 export const effectiveLife = (t: Tile, cap: number): number => Math.min(t.life, cap);

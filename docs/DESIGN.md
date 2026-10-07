@@ -60,9 +60,9 @@ Each tile carries a `life` value from 0 to 100, owned by the server:
 - harvesting a deposit drops its tile's life with its remaining stock (a tree becomes a stump, a pond tile becomes mud), and a deposit harvested bare takes 15 life from each neighbour
 - a building turns its footprint to 15 life (plazas excepted)
 - operating harvesters scar a 1-tile radius, furnaces a 2-tile radius, every economy tick
-- a world's coolant is its water table: every tile's life is capped at `15 + 85 × (coolant left ÷ coolant at the start)`, so drawing down the pond dries the whole island, not just the tiles anyone touched
+- the land holds only as much life as its world has left: every tile's life is capped at `15 + 85 × (0.6 × share of all stock left + 0.4 × share of coolant left)`, so the whole island dries as it's consumed, not just the tiles anyone touched, and draining the pond (the world's water) costs more than its share
 
-In the first full playthrough without the water table, Earth ended at 82% living land: still a green island. With it, the same playthrough ended at 12%, brown to the edges.
+In the first full playthrough with only local damage, Earth ended at 82% living land: still a green island. Capping by coolant alone ended the same playthrough at 12%, brown to the edges, but bots that drained the pond first browned the island before anything was built, so loss arrived before attachment. The blended cap makes desolation track overall consumption in whatever order it happens.
 
 The renderer turns that into grass that drains from green to brown, wilting trees, a shrinking pond, fewer birds and butterflies (count ∝ life^1.5), fewer bird calls, quieter wind and water, a rising machine hum, and thinner, slower music. The Sun dims the entire scene as its plasma goes; in the Universe the background stars go out as galaxies are siphoned.
 
