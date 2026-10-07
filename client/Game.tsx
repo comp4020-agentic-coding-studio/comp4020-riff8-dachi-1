@@ -144,7 +144,7 @@ export default function Game({ room, name }: { room: string; name: string }): Re
       if (k === "e" || k === " ") {
         e.preventDefault();
         quickHarvest();
-        if (!harvestTimer) harvestTimer = setInterval(quickHarvest, 420);
+        if (!harvestTimer) harvestTimer = setInterval(quickHarvest, 820);
       } else if (e.shiftKey && /^digit[1-6]$/i.test(e.code)) {
         e.preventDefault();
         client.send({ k: "emote", e: EMOTES[Number(e.code.slice(5)) - 1] });

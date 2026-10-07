@@ -219,9 +219,9 @@ export const STAGES: StageDef[] = [
     avatar: "person",
     energySource: "local",
     families: {
-      matter: { label: "timber", tiles: 34, perTile: 12 },
-      mineral: { label: "stone", tiles: 16, perTile: 14 },
-      coolant: { label: "fresh water", tiles: 14, perTile: 10 },
+      matter: { label: "timber", tiles: 34, perTile: 18 },
+      mineral: { label: "stone", tiles: 16, perTile: 20 },
+      coolant: { label: "fresh water", tiles: 14, perTile: 14 },
     },
     buildings: ["city", "plaza", "furnace", "solar", "datacentre", "extractor"],
     names: {
@@ -255,9 +255,9 @@ export const STAGES: StageDef[] = [
     avatar: "suit",
     energySource: "local",
     families: {
-      matter: { label: "regolith", tiles: 30, perTile: 14 },
-      mineral: { label: "iron", tiles: 18, perTile: 15 },
-      coolant: { label: "buried ice", tiles: 18, perTile: 12 },
+      matter: { label: "regolith", tiles: 30, perTile: 18 },
+      mineral: { label: "iron", tiles: 18, perTile: 20 },
+      coolant: { label: "buried ice", tiles: 18, perTile: 16 },
     },
     buildings: ["habitat", "solar", "city", "datacentre", "extractor", "plaza"],
     names: {
@@ -291,9 +291,9 @@ export const STAGES: StageDef[] = [
     avatar: "drone",
     energySource: "local",
     families: {
-      matter: { label: "plasma", tiles: 44, perTile: 12 },
-      mineral: { label: "magnetics", tiles: 16, perTile: 14 },
-      coolant: { label: "shade", tiles: 14, perTile: 10 },
+      matter: { label: "plasma", tiles: 44, perTile: 16 },
+      mineral: { label: "magnetics", tiles: 16, perTile: 18 },
+      coolant: { label: "shade", tiles: 14, perTile: 14 },
     },
     buildings: ["solar", "radiator", "datacentre", "city", "extractor", "plaza"],
     names: {
@@ -327,9 +327,9 @@ export const STAGES: StageDef[] = [
     avatar: "probe",
     energySource: "bottled",
     families: {
-      matter: { label: "volatiles", tiles: 34, perTile: 12 },
-      mineral: { label: "asteroid metal", tiles: 22, perTile: 14 },
-      coolant: { label: "comet ice", tiles: 16, perTile: 10 },
+      matter: { label: "volatiles", tiles: 34, perTile: 16 },
+      mineral: { label: "asteroid metal", tiles: 22, perTile: 18 },
+      coolant: { label: "comet ice", tiles: 16, perTile: 14 },
     },
     buildings: ["relay", "datacentre", "city", "extractor", "plaza"],
     names: {
@@ -363,9 +363,9 @@ export const STAGES: StageDef[] = [
     avatar: "wisp",
     energySource: "bottled",
     families: {
-      matter: { label: "starlight", tiles: 40, perTile: 12 },
-      mineral: { label: "stellar cores", tiles: 20, perTile: 14 },
-      coolant: { label: "dark cold", tiles: 16, perTile: 10 },
+      matter: { label: "starlight", tiles: 40, perTile: 16 },
+      mineral: { label: "stellar cores", tiles: 20, perTile: 18 },
+      coolant: { label: "dark cold", tiles: 16, perTile: 14 },
     },
     buildings: ["datacentre", "city", "extractor", "plaza"],
     names: {
@@ -399,15 +399,16 @@ export const MAX_PLAYERS = 8;
 export const PACES = {
   // normal: one economy tick a second; harvest yields 1
   normal: { econEvery: 10, harvestYield: 1, transitionTicks: 90 },
-  // the accelerated development preset: same rules, five times the clock
-  rapid: { econEvery: 2, harvestYield: 5, transitionTicks: 50 },
+  // the accelerated development preset: same rules, the economy five times
+  // faster and a hand harvest worth ten
+  rapid: { econEvery: 2, harvestYield: 10, transitionTicks: 50 },
 } as const;
 export type Pace = keyof typeof PACES;
 
 export const PLAYER_SPEED = 4; // tiles per second
 export const HARVEST_RANGE = 2.2; // tiles
 export const BUILD_RANGE = 8; // tiles
-export const HARVEST_COOLDOWN_TICKS = 4;
+export const HARVEST_COOLDOWN_TICKS = 8;
 export const MARKS_PER_PLAYER = 3;
 export const SALVAGE_RATE = 0.5;
 /** heat at which collectors throttle to half output (the Sun) */

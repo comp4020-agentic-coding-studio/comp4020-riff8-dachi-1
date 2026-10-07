@@ -145,4 +145,4 @@ setInterval(() => {
     send({ k: "move", dx: 0, dy: 0 });
     send({ k: "harvest", x: best % s.w, y: Math.floor(best / s.w) });
   } else send({ k: "move", dx: target[0] - me.x, dy: target[1] - me.y });
-}, 420);
+}, 820);
