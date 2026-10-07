@@ -391,6 +391,14 @@ export default function Game({ room, name }: { room: string; name: string }): Re
           {s.phase.k === "transition" && <Transition s={s} />}
           {s.phase.k === "ended" && <Ending s={s} />}
           <Toasts client={client} />
+          {client.status === "reconnecting" && (
+            <div className="overlay center" role="status">
+              <div className="card">
+                <p className="title">Reconnecting…</p>
+                <p>The world is safe on the server. You'll be back where you were in a moment.</p>
+              </div>
+            </div>
+          )}
         </>
       )}
     </main>

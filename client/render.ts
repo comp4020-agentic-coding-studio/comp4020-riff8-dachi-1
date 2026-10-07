@@ -76,6 +76,7 @@ export class Renderer {
   private raf = 0;
   private boundaryAt = 0;
   private cap = 100;
+  private hint: { text: string; x: number; y: number } | null = null;
   frameMs = 0;
   private canvas: HTMLCanvasElement;
   private client: GameClient;
@@ -251,6 +252,8 @@ export class Renderer {
     }
     items.sort((a, b) => a.depth - b.depth);
     for (const it of items) it.draw();
+    if (this.hint) this.label(this.hint.text, this.hint.x, this.hint.y, "#fffbe0", 12);
+    this.hint = null;
 
     if (dim > 0) {
       ctx.fillStyle = `rgba(20,8,16,${dim})`;
@@ -830,6 +833,12 @@ export class Renderer {
     }
     const isMe = p.id === this.client.you;
     this.label(`${p.name}${isMe ? " (you)" : ""}${p.connected ? "" : " · away"}`, cx, cy - 44 * z, isMe ? "#fffbe0" : "#ffffff", 11, col);
+    // a compact prompt for your first harvests: what E would do right now
+    if (isMe && p.stats.harvested + p.stats.helped < 25 && this.view.tool === "harvest") {
+      const hint = this.harvestHint(st, x, y);
+      // drawn after every object, so trees in front can't cover it
+      if (hint) this.hint = { text: hint, x: cx, y: cy + 14 * z };
+    }
     if (p.act?.k === "emote" && p.act.e) {
       const glyph = { wave: "👋", heart: "💛", laugh: "😄", wow: "😮", sad: "😢", point: "👉" }[p.act.e];
       this.ellipse(cx + 16 * z, cy - 56 * z, 13 * z, 11 * z, "#fffdf3", OUTLINE);
@@ -839,6 +848,21 @@ export class Renderer {
       ctx.fillText(glyph, cx + 16 * z, cy - 56 * z);
     }
     ctx.globalAlpha = 1;
+  }
+
+  private harvestHint(st: StageDef, px: number, py: number): string | null {
+    const s = this.client.state;
+    if (!s) return null;
+    for (let r = 0; r <= 2; r++)
+      for (let y = Math.round(py) - r; y <= Math.round(py) + r; y++)
+        for (let x = Math.round(px) - r; x <= Math.round(px) + r; x++) {
+          if (x < 0 || y < 0 || x >= s.w || y >= s.w || Math.hypot(x - px, y - py) > 2.1) continue;
+          const t = s.tiles[y * s.w + x];
+          if (t.d && t.amt > 0) return `E: harvest ${st.families[t.d].label}`;
+          const b = t.b ? s.buildings.find((q) => q.id === t.b) : undefined;
+          if (b && b.work < BUILDINGS[b.type].build * 10) return "E: help build";
+        }
+    return null;
   }
 
   private eyes(x: number, y: number, z: number): void {
