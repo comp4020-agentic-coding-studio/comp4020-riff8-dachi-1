@@ -685,6 +685,15 @@ function Transition({ s }: { s: Snapshot }): ReactNode {
 function Ending({ s }: { s: Snapshot }): ReactNode {
   const total = s.history.reduce((a, h) => a + FAMILIES.reduce((b, f) => b + h.ledger[f].extracted + h.ledger[f].destroyed, 0), 0);
   const [busy, setBusy] = useState(false);
+  const [hidden, setHidden] = useState(false);
+  if (hidden)
+    return (
+      <div className="overlay bottom-card">
+        <button type="button" onClick={() => setHidden(false)}>
+          Back to the ending
+        </button>
+      </div>
+    );
   return (
     <div className="overlay center ending" role="dialog" aria-labelledby="end-h">
       <div className="card dark">
@@ -719,6 +728,9 @@ function Ending({ s }: { s: Snapshot }): ReactNode {
           }}
         >
           Start a new campaign, somewhere else
+        </button>{" "}
+        <button type="button" onClick={() => setHidden(true)}>
+          Look at what's left
         </button>
       </div>
     </div>

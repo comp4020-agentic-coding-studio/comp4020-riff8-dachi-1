@@ -185,6 +185,8 @@ export class Renderer {
     ctx.fillRect(0, 0, this.cam.w, this.cam.h);
     if (st.id === "system" || st.id === "universe") this.stars(s, anim);
     if (st.id === "sun") this.sunGlow(s, anim);
+    // the Sun dims as it's consumed: everything darkens with it
+    const dim = st.id === "sun" ? 0.65 * (1 - (s.ledger.matter.initial ? s.ledger.matter.remaining / s.ledger.matter.initial : 0)) : 0;
 
     const z = this.cam.zoom;
     const visible = (x: number, y: number, pad = 80): boolean => {
@@ -225,6 +227,10 @@ export class Renderer {
     items.sort((a, b) => a.depth - b.depth);
     for (const it of items) it.draw();
 
+    if (dim > 0) {
+      ctx.fillStyle = `rgba(20,8,16,${dim})`;
+      ctx.fillRect(0, 0, this.cam.w, this.cam.h);
+    }
     this.ghost(s, st);
     this.wildlife(s, st, anim);
     this.effects(now);

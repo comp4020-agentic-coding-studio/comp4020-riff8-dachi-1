@@ -124,7 +124,7 @@ export const BUILDINGS: Record<BuildingType, BuildingDef> = {
     energy: -1,
     workers: 0,
     compute: 0,
-    cooling: 7,
+    cooling: 5,
     blurb: "Sheds heat so collectors don't throttle.",
   },
   relay: {

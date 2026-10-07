@@ -136,9 +136,13 @@ export function join(s: RoomState, id: string, token: string, name: string, ch: 
   while (used.has(colour)) colour++;
   const sp = spawnPoint(s);
   const n = Object.keys(s.players).length;
+  // two browsers called "Ada" stay tellable apart
+  const taken = new Set(Object.values(s.players).map((q) => q.name));
+  let unique = cleanName(name);
+  for (let k = 2; taken.has(unique); k++) unique = `${cleanName(name).slice(0, 13)} ${k}`;
   const p: Player = {
     id,
-    name: cleanName(name),
+    name: unique,
     colour,
     x: sp.x + (n % 3) - 1,
     y: sp.y + Math.floor(n / 3) * 0.8,
@@ -624,9 +628,9 @@ function economy(s: RoomState, ch: Changes): void {
   // the Sun: heat builds with collectors and computation, radiators shed it
   if (st.mechanic === "heat") {
     for (const b of built) if (b.status === "ok" && b.type !== "extractor") heat += BUILDINGS[b.type].heat ?? 0;
-    heat += of("solar").length * 2;
+    heat += of("solar").length * 4;
     for (const r of of("radiator")) if (r.status === "ok") heat -= BUILDINGS.radiator.cooling!;
-    const next = Math.max(0, Math.min(100, s.heat + heat - 3));
+    const next = Math.max(0, Math.min(100, s.heat + heat - 2));
     if (next !== s.heat) ch.meta = true;
     s.heat = next;
   }
