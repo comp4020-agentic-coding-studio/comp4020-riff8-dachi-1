@@ -5,6 +5,7 @@
 import { useEffect, useRef, useState, type ReactNode } from "react";
 import { BUILDINGS, EMOTES, FAMILIES, HARVEST_RANGE, STAGES, buildingName, type BuildingType, type Emote } from "../shared/content.ts";
 import type { Building, Snapshot } from "../shared/protocol.ts";
+import { averageLife } from "../shared/sim.ts";
 import { GameClient } from "./net.ts";
 import { PLAYER_COLOURS, Renderer, type Tool, type View } from "./render.ts";
 import { Sound, type Mix } from "./audio.ts";
@@ -92,8 +93,7 @@ export default function Game({ room, name }: { room: string; name: string }): Re
   useEffect(() => {
     if (!s) return;
     const snd = soundRef.current;
-    const land = s.tiles.filter((t) => t.t === 0 || t.t === 1 || t.t === 3);
-    snd.life = land.reduce((a, t) => a + t.life, 0) / Math.max(1, land.length);
+    snd.life = averageLife(s);
     snd.machines = s.buildings.filter((b) => b.status === "ok" && b.owner).length;
     snd.stage = s.stage;
     snd.ended = s.phase.k === "ended";
@@ -386,8 +386,7 @@ export default function Game({ room, name }: { room: string; name: string }): Re
 
 function StagePanel({ s }: { s: Snapshot }): ReactNode {
   const st = STAGES[s.stage];
-  const land = s.tiles.filter((t) => t.t === 0 || t.t === 1 || t.t === 3);
-  const life = Math.round(land.reduce((a, t) => a + t.life, 0) / Math.max(1, land.length));
+  const life = averageLife(s);
   return (
       <div className="panel top-left">
         <p className="stage">

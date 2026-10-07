@@ -5,7 +5,7 @@
 // lose life), so every asset is code in this file and replaceable in one place.
 import { BUILDINGS, STAGES, type BuildingType, type Family, type StageDef } from "../shared/content.ts";
 import type { Building, Player, Snapshot, Tile } from "../shared/protocol.ts";
-import { placementProblem } from "../shared/sim.ts";
+import { averageLife, effectiveLife, lifeCap, placementProblem } from "../shared/sim.ts";
 import type { RoomState } from "../shared/protocol.ts";
 import { TH, TW, screenToTile, toScreen, toWorld, type Camera } from "./iso.ts";
 import type { GameClient } from "./net.ts";
@@ -75,6 +75,7 @@ export class Renderer {
   private last = performance.now();
   private raf = 0;
   private boundaryAt = 0;
+  private cap = 100;
   frameMs = 0;
   private canvas: HTMLCanvasElement;
   private client: GameClient;
@@ -195,6 +196,7 @@ export class Renderer {
     };
 
     // ground, back to front
+    this.cap = lifeCap(s.ledger);
     for (let d = 0; d <= (s.w - 1) * 2; d++) {
       for (let x = Math.max(0, d - s.w + 1); x <= Math.min(d, s.w - 1); x++) {
         const y = d - x;
@@ -264,7 +266,7 @@ export class Renderer {
     const t = s.tiles[i];
     if (t.t === 2) return; // open space: the sky shows through
     const pts = this.corners(x, y);
-    const k = t.life / 100;
+    const k = effectiveLife(t, this.cap) / 100;
     let fill: string;
     const jitter = (hash(i) - 0.5) * 0.08;
     if (t.t === 1) {
@@ -364,7 +366,7 @@ export class Renderer {
             const ox = (hash(i * 13 + k) - 0.5) * 22 * z;
             const oy = (hash(i * 17 + k) - 0.5) * 8 * z;
             const sway = Math.sin(anim * 1.2 + i + k) * 1.5 * z;
-            this.tree(cx + ox, cy + oy, z * (0.8 + 0.3 * hash(i + k)), col, sway, t.life);
+            this.tree(cx + ox, cy + oy, z * (0.8 + 0.3 * hash(i + k)), col, sway, effectiveLife(t, this.cap));
           }
         }
       } else if (t.d === "mineral") {
@@ -869,8 +871,7 @@ export class Renderer {
   private lifeValue = 100;
   private lifeCache(s: Snapshot): number {
     if (performance.now() - this.lifeAt > 1000) {
-      const land = s.tiles.filter((t) => t.t === 0 || t.t === 1 || t.t === 3);
-      this.lifeValue = land.reduce((a, t) => a + t.life, 0) / Math.max(1, land.length);
+      this.lifeValue = averageLife(s);
       this.lifeAt = performance.now();
     }
     return this.lifeValue;

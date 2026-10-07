@@ -57,9 +57,22 @@ function ledgerFor(tiles: Tile[]): Ledger {
   return l;
 }
 
-export const averageLife = (s: Pick<RoomState, "tiles">): number => {
+/**
+ * A world's coolant is its water table: as it's drawn down, every tile's life
+ * is capped lower, so the whole land dries, not just the tiles touched.
+ * Derived from the ledger, so both sides compute it and it costs no traffic.
+ */
+export const lifeCap = (ledger: Ledger): number => {
+  const c = ledger.coolant;
+  return Math.round(15 + 85 * (c.initial ? c.remaining / c.initial : 0));
+};
+
+export const effectiveLife = (t: Tile, cap: number): number => Math.min(t.life, cap);
+
+export const averageLife = (s: Pick<RoomState, "tiles" | "ledger">): number => {
+  const cap = lifeCap(s.ledger);
   const land = s.tiles.filter((t) => t.t === 0 || t.t === 1 || t.t === 3);
-  return Math.round(land.reduce((a, t) => a + t.life, 0) / Math.max(1, land.length));
+  return Math.round(land.reduce((a, t) => a + effectiveLife(t, cap), 0) / Math.max(1, land.length));
 };
 
 export function createRoom(code: string, seed: number, pace: Pace): RoomState {
@@ -243,7 +256,19 @@ function takeFrom(s: RoomState, idx: number, amount: number, ch: Changes): numbe
   tile.life = Math.min(tile.life, Math.round((tile.amt / tile.init) * 60));
   ch.tiles.add(idx);
   ch.meta = true;
-  if (tile.amt === 0) remember(s, tile, "was harvested bare", ch);
+  if (tile.amt === 0) {
+    remember(s, tile, "was harvested bare", ch);
+    // a grove or pond gone leaves the ground around it poorer
+    const x = idx % s.w;
+    const y = Math.floor(idx / s.w);
+    for (let dy = -1; dy <= 1; dy++)
+      for (let dx = -1; dx <= 1; dx++) {
+        const n = tileAt(s, x + dx, y + dy);
+        if (!n || n.t === 2 || (dx === 0 && dy === 0)) continue;
+        n.life = Math.max(0, n.life - 15);
+        ch.tiles.add((y + dy) * s.w + x + dx);
+      }
+  }
   return took;
 }
 
