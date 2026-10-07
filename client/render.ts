@@ -438,6 +438,9 @@ export class Renderer {
         }
       }
     }
+    // little surprises at Earth's named places, gone when the place is
+    if (st.id === "earth" && t.mark?.name === "Heron Pond" && t.amt > 0) this.heron(cx - 8 * z, cy + 2 * z, anim);
+    if (st.id === "earth" && t.mark?.name === "Picnic Hill") this.picnic(cx - 6 * z, cy + 3 * z);
     if (t.mark) {
       ctx.strokeStyle = "#3a2c2c";
       ctx.lineWidth = 1.5 * z;
@@ -449,6 +452,45 @@ export class Renderer {
       this.poly([[cx + 10 * z, cy - 26 * z], [cx + 24 * z, cy - 22 * z + wave], [cx + 10 * z, cy - 18 * z]], "#ff8a65", OUTLINE);
       this.label(t.mark.name, cx + 10 * z, cy - 32 * z, "#fffdf3", 11);
     }
+  }
+
+  private heron(x: number, y: number, anim: number): void {
+    const ctx = this.ctx;
+    const z = this.cam.zoom;
+    // stands still, then dips its beak now and then
+    const dip = Math.max(0, Math.sin(anim * 0.7)) > 0.97 ? 5 * z : 0;
+    ctx.strokeStyle = "#5b5560";
+    ctx.lineWidth = 1.2 * z;
+    ctx.beginPath();
+    ctx.moveTo(x - 1.5 * z, y);
+    ctx.lineTo(x - 1 * z, y - 9 * z);
+    ctx.moveTo(x + 1.5 * z, y);
+    ctx.lineTo(x + 1 * z, y - 9 * z);
+    ctx.stroke();
+    this.ellipse(x, y - 12 * z, 5 * z, 3.5 * z, "#b9bec9", OUTLINE);
+    ctx.strokeStyle = "#b9bec9";
+    ctx.lineWidth = 2 * z;
+    ctx.beginPath();
+    ctx.moveTo(x + 3 * z, y - 13 * z);
+    ctx.quadraticCurveTo(x + 7 * z, y - 20 * z, x + 5 * z, y - 23 * z + dip);
+    ctx.stroke();
+    this.ellipse(x + 5 * z, y - 23 * z + dip, 2.2 * z, 1.8 * z, "#c9ced8", OUTLINE);
+    ctx.strokeStyle = "#e0a040";
+    ctx.lineWidth = 1.2 * z;
+    ctx.beginPath();
+    ctx.moveTo(x + 7 * z, y - 23 * z + dip);
+    ctx.lineTo(x + 11 * z, y - 22 * z + dip * 1.4);
+    ctx.stroke();
+  }
+
+  private picnic(x: number, y: number): void {
+    const z = this.cam.zoom;
+    const w = 10 * z;
+    const h = 5 * z;
+    this.poly([[x, y - h], [x + w, y], [x, y + h], [x - w, y]], "#e86a5a", OUTLINE);
+    this.poly([[x - w / 2, y - h / 2], [x, y], [x - w / 2, y + h / 2], [x - w, y]], "#fff3e8");
+    this.poly([[x + w / 2, y - h / 2], [x + w, y], [x + w / 2, y + h / 2], [x, y]], "#fff3e8");
+    this.ellipse(x + 2 * z, y - 3 * z, 3 * z, 2.2 * z, "#c98a4a", OUTLINE);
   }
 
   private ellipse(x: number, y: number, rx: number, ry: number, fill: string, stroke?: string): void {
@@ -775,7 +817,8 @@ export class Renderer {
       }
       if (!away) this.eyes(cx + fx * 3 * z, cy - 24 * z, z);
       // tool swing while harvesting or building
-      if (p.act && (p.act.k === "harvest" || p.act.k === "build")) {
+      const swinging = (p.act && (p.act.k === "harvest" || p.act.k === "build")) || (p.id === this.client.you && performance.now() < this.client.swingUntil);
+      if (swinging) {
         const sw = Math.sin(anim * 18) * 0.9;
         ctx.strokeStyle = "#7a5233";
         ctx.lineWidth = 2.5 * z;

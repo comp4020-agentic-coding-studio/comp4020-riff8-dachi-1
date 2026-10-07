@@ -128,6 +128,9 @@ export class Sound {
     }
   }
 
+  tap(): void {
+    this.tone(330 + Math.random() * 40, 0.06, "effects", "triangle", 0.08);
+  }
   harvest(): void {
     this.tone(520 + Math.random() * 80, 0.12, "effects", "triangle", 0.18, 300);
   }

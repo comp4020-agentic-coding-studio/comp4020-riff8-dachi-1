@@ -33,6 +33,8 @@ export class GameClient {
   samples = new Map<string, Sample[]>();
   /** locally predicted position of our own avatar */
   me = { x: 0, y: 0, dx: 0, dy: 0 };
+  /** until when (performance.now) our own avatar swings, before the server confirms */
+  swingUntil = 0;
   /** fired on every applied tile change: the renderer spawns effects from these */
   onTile: ((i: number, before: number, after: number) => void) | null = null;
   onAck: ((ok: boolean, c: Command, reason?: string) => void) | null = null;
@@ -120,6 +122,8 @@ export class GameClient {
     if (c.k !== "move") {
       if (this.pending.size >= PENDING_LIMIT) return this.toast("Waiting for the server…", "bad");
       this.pending.set(id, c);
+      // the swing is a preview; the stockpile only moves when the server says so
+      if (c.k === "harvest") this.swingUntil = performance.now() + 450;
     }
     this.raw({ t: "cmd", id, inc: this.inc, gen: this.state.gen, c });
   }

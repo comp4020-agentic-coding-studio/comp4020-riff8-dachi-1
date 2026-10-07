@@ -234,7 +234,10 @@ export default function Game({ room, name }: { room: string; name: string }): Re
         const d = Math.hypot(x - c.me.x, y - c.me.y);
         if (useful && d <= HARVEST_RANGE - 0.1 && d < bd) [bd, best] = [d, [x, y]];
       }
-    if (best) c.send({ k: "harvest", x: best[0], y: best[1] });
+    if (best) {
+      c.send({ k: "harvest", x: best[0], y: best[1] });
+      soundRef.current.tap();
+    }
     else c.toast("Nothing in reach to harvest. Press V to survey.", "bad");
   }
 
@@ -263,7 +266,10 @@ export default function Game({ room, name }: { room: string; name: string }): Re
           if (site && site.work >= BUILDINGS[site.type].build * 10) {
             view.selected = site.id;
             rerender();
-          } else c.send({ k: "harvest", x, y });
+          } else {
+            c.send({ k: "harvest", x, y });
+            soundRef.current.tap();
+          }
         } else view.selected = null;
         rerender();
     }
