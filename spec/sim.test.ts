@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { BUILDINGS, FAMILIES, STAGES } from "../shared/content.ts";
 import type { RoomState } from "../shared/protocol.ts";
-import { applyCommand, createRoom, join, ledgerHolds, newChanges, tick, totalRemaining, bundleOk, type Changes } from "../shared/sim.ts";
+import { applyCommand, createRoom, join, leave, ledgerHolds, newChanges, tick, totalRemaining, bundleOk, type Changes } from "../shared/sim.ts";
 
 // The authoritative simulation, exercised directly: no browser, no socket.
 
@@ -176,6 +176,33 @@ describe("commands", () => {
     s.players.a.nextHarvest = 0;
     expect(applyCommand(s, "a", "same", s.gen, { k: "harvest", x, y }, ch)).toEqual({ ok: true });
     expect(s.tiles[i].amt).toBe(before - 1);
+  });
+
+  it("receipts only applied commands, so a refused one can be retried for real", () => {
+    const { s, ch } = room("normal");
+    const i = depositIdx(s);
+    const [x, y] = at(s, i);
+    stand(s, "a", x, y);
+    const before = s.tiles[i].amt;
+    applyCommand(s, "a", "first", s.gen, { k: "harvest", x, y }, ch);
+    expect(applyCommand(s, "a", "again", s.gen, { k: "harvest", x, y }, ch)).toEqual({ ok: false, reason: "too fast" });
+    s.players.a.nextHarvest = 0;
+    expect(applyCommand(s, "a", "again", s.gen, { k: "harvest", x, y }, ch)).toEqual({ ok: true });
+    expect(s.tiles[i].amt).toBe(before - 2);
+  });
+
+  it("counts seats by who's connected, so departed browsers never fill a room", () => {
+    const { s, ch } = room("normal", ["p0", "p1", "p2", "p3", "p4", "p5", "p6", "p7"]);
+    expect(join(s, "late", "tok-late", "Late", ch)).toBeNull();
+    leave(s, "p3", ch);
+    expect(join(s, "late", "tok-late", "Late", ch)).not.toBeNull();
+    for (let k = 0; k < 40; k++) {
+      leave(s, "late", ch);
+      expect(join(s, `v${k}`, `t${k}`, "Visitor", ch)).not.toBeNull();
+      leave(s, `v${k}`, ch);
+    }
+    expect(Object.keys(s.players).length).toBeLessThanOrEqual(32);
+    expect(s.players.p0).toBeDefined();
   });
 
   it("rejects commands addressed to a previous stage", () => {

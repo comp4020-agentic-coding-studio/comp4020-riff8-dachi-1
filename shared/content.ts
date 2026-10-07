@@ -396,6 +396,8 @@ export const SUN_TO_RESERVE = 4;
 
 export const TICK_MS = 100;
 export const MAX_PLAYERS = 8;
+/** identities a room remembers; past this the longest-gone is forgotten */
+export const MAX_IDENTITIES = 32;
 export const PACES = {
   // normal: one economy tick a second; harvest yields 1
   normal: { econEvery: 10, harvestYield: 1, transitionTicks: 90 },

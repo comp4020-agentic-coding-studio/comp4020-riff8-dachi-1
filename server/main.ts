@@ -10,6 +10,7 @@ import { marked } from "marked";
 import { MAX_MESSAGE_BYTES } from "../shared/protocol.ts";
 import { TICK_MS } from "../shared/content.ts";
 import { attach, createNewRoom, paceOf, roomCount, saveAll, stats, stepAll } from "./rooms.ts";
+import { pruneRooms } from "./store.ts";
 
 const PORT = Number(process.env.PORT ?? 8080);
 const ROOT = resolve(import.meta.dirname, "..");
@@ -36,6 +37,24 @@ function sameOrigin(req: IncomingMessage): boolean {
   } catch {
     return false;
   }
+}
+
+/** Fly's proxy names the real client; locally it's the socket's peer. */
+const clientIp = (req: IncomingMessage): string => {
+  const fly = req.headers["fly-client-ip"];
+  return (typeof fly === "string" && fly) || req.socket.remoteAddress || "unknown";
+};
+
+// at most ROOMS_PER_HOUR new rooms per address: each one is a stored row
+const ROOMS_PER_HOUR = 60;
+const created = new Map<string, number[]>();
+function mayCreateRoom(ip: string): boolean {
+  const hourAgo = Date.now() - 3_600_000;
+  const recent = (created.get(ip) ?? []).filter((t) => t > hourAgo);
+  if (recent.length >= ROOMS_PER_HOUR) return false;
+  recent.push(Date.now());
+  created.set(ip, recent);
+  return true;
 }
 
 async function readme(): Promise<string> {
@@ -104,6 +123,7 @@ const server = createServer(async (req, res) => {
     if (url.pathname === "/api/rooms") {
       if (req.method !== "POST") return json(res, 405, { error: "POST only" });
       if (!sameOrigin(req)) return json(res, 403, { error: "cross-site request refused" });
+      if (!mayCreateRoom(clientIp(req))) return json(res, 429, { error: "too many new rooms: try again later" });
       let size = 0;
       const chunks: Buffer[] = [];
       for await (const chunk of req) {
@@ -140,10 +160,12 @@ server.on("upgrade", (req, socket, head) => {
     socket.destroy();
     return;
   }
-  wss.handleUpgrade(req, socket, head, (ws) => attach(ws));
+  wss.handleUpgrade(req, socket, head, (ws) => attach(ws, clientIp(req)));
 });
 
 const loop = setInterval(stepAll, TICK_MS / 2);
+pruneRooms();
+setInterval(pruneRooms, 3_600_000).unref();
 
 function shutdown(signal: string): void {
   console.log(`${signal}: saving rooms and closing`);

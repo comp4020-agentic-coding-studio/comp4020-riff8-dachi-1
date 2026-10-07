@@ -183,6 +183,19 @@ describe("real time", () => {
     a.close();
   });
 
+  it("survives messages built to throw when coerced", async () => {
+    const room = await newRoom(baseUrl);
+    const a = await joined(baseUrl, room, "Ada");
+    a.send({ t: "cmd", id: { toString: 1 }, inc: "stale", gen: 1, c: { k: "emote", e: "wave" } });
+    a.send({ t: "ping", n: { toString: 1 } });
+    await a.until((m) => m.t === "pong");
+    expect((await fetch(new URL("/api/health", baseUrl))).status).toBe(200);
+    const b = await joined(baseUrl, room, "Bo");
+    expect(Object.keys(b.snap!.players)).toHaveLength(2);
+    a.close();
+    b.close();
+  });
+
   it("drops oversized and malformed messages without dropping the room", async () => {
     const room = await newRoom(baseUrl);
     const a = await joined(baseUrl, room, "Ada");

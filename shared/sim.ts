@@ -11,6 +11,7 @@ import {
   HARVEST_RANGE,
   HEAT_LIMIT,
   MARKS_PER_PLAYER,
+  MAX_IDENTITIES,
   MAX_PLAYERS,
   PACES,
   PLAYER_SPEED,
@@ -149,7 +150,17 @@ export function join(s: RoomState, id: string, token: string, name: string, ch: 
     ch.meta = true;
     return existing;
   }
-  if (Object.keys(s.players).length >= MAX_PLAYERS) return null;
+  // capacity is seats at the table, not every browser that ever visited
+  if (Object.values(s.players).filter((q) => q.connected).length >= MAX_PLAYERS) return null;
+  if (Object.keys(s.players).length >= MAX_IDENTITIES) {
+    // forget the longest-gone identity; its buildings stay, credited to "someone"
+    const gone = Object.values(s.players)
+      .filter((q) => !q.connected)
+      .sort((a, b) => a.joinedTick - b.joinedTick)[0];
+    delete s.players[gone.id];
+    delete s.tokens[gone.id];
+    delete s.receipts[gone.id];
+  }
   const used = new Set(Object.values(s.players).map((p) => p.colour));
   let colour = 0;
   while (used.has(colour)) colour++;
@@ -278,13 +289,10 @@ function takeFrom(s: RoomState, idx: number, amount: number, ch: Changes): numbe
   return took;
 }
 
-/** Remember a command id; true if it was already applied (a retry). */
-function seen(s: RoomState, pid: string, cmdId: string): boolean {
+function receipt(s: RoomState, pid: string, cmdId: string): void {
   const r = (s.receipts[pid] ??= []);
-  if (r.includes(cmdId)) return true;
   r.push(cmdId);
   if (r.length > 64) r.splice(0, r.length - 64);
-  return false;
 }
 
 export function applyCommand(s: RoomState, pid: string, cmdId: string, gen: number, c: Command, ch: Changes): Result {
@@ -304,7 +312,16 @@ export function applyCommand(s: RoomState, pid: string, cmdId: string, gen: numb
   }
 
   if (s.phase.k !== "play") return no(s.phase.k === "ended" ? "there is nothing left" : "the world is changing: wait a moment");
-  if (seen(s, pid, cmdId)) return OK; // duplicate: already applied, acknowledge again
+  // a retry of a command that was applied is acknowledged again, not applied again;
+  // only applied commands are receipted, so a refused one can be retried for real
+  if (s.receipts[pid]?.includes(cmdId)) return OK;
+  const res = mutate(s, p, c, ch);
+  if (res.ok) receipt(s, pid, cmdId);
+  return res;
+}
+
+function mutate(s: RoomState, p: Player, c: Exclude<Command, { k: "move" }>, ch: Changes): Result {
+  const pid = p.id;
   const st = STAGES[s.stage];
 
   switch (c.k) {
@@ -536,7 +553,8 @@ function economy(s: RoomState, ch: Changes): void {
   for (const b of s.buildings) if (!complete(b)) {
     b.work = Math.min(BUILDINGS[b.type].build * 10, b.work + 10);
     ch.buildings.add(b.id);
-    if (complete(b)) setStatus(b, "ok", ch);
+    // a finished building earns its real status on the next tick, not a free one now
+    if (complete(b)) setStatus(b, "starting up", ch);
   }
   const of = (t: BuildingType): Building[] => built.filter((b) => b.type === t);
   const plazaTiles = new Set(of("plaza").flatMap((b) => ring(s, b)));

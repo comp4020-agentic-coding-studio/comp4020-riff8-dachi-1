@@ -160,13 +160,20 @@ export function stepAll(): void {
       r.lastTickAt = now - MAX_CATCHUP_TICKS * TICK_MS;
       due = MAX_CATCHUP_TICKS;
     }
-    for (let i = 0; i < due; i++) {
-      tick(r.s, r.ch);
-      r.lastTickAt += TICK_MS;
-      if (r.ch.boundary) break;
+    try {
+      for (let i = 0; i < due; i++) {
+        tick(r.s, r.ch);
+        r.lastTickAt += TICK_MS;
+        if (r.ch.boundary) break;
+      }
+      flush(r);
+      if (r.dirty && now - r.lastSave > SAVE_EVERY_MS) save(r);
+    } catch (err) {
+      // one room's failure mustn't stop the others; it resumes from its last save on next load
+      console.error(`room ${code}:`, err);
+      for (const c of r.conns) c.ws.close(1011, "room error");
+      rooms.delete(code);
     }
-    flush(r);
-    if (r.dirty && now - r.lastSave > SAVE_EVERY_MS) save(r);
   }
   stats.tickMsLast = performance.now() - t0;
   stats.tickMsMax = Math.max(stats.tickMsMax, stats.tickMsLast);
@@ -180,12 +187,33 @@ export const roomCount = (): number => rooms.size;
 
 const isRecord = (v: unknown): v is Record<string, unknown> => typeof v === "object" && v !== null && !Array.isArray(v);
 
-export function attach(ws: WebSocket): void {
+const perIp = new Map<string, number>();
+// generous: a whole class on campus Wi-Fi can share one public address
+const MAX_SOCKETS_PER_IP = 32;
+
+export function attach(ws: WebSocket, ip: string): void {
+  // one machine opening many sockets can't take every seat or multiply its rate limit
+  const open = perIp.get(ip) ?? 0;
+  if (open >= MAX_SOCKETS_PER_IP) {
+    ws.close(1013, "too many connections from one address");
+    return;
+  }
+  perIp.set(ip, open + 1);
   const c: Conn = { ws, pid: null, tokens: 60, lastRefill: Date.now() };
   let room: LiveRoom | null = null;
   const fail = (reason: string): void => send(c, { t: "error", reason });
 
   ws.on("message", (raw, isBinary) => {
+    // a throw in here would take every room down with it: contain it to this message
+    try {
+      onMessage(raw.toString(), isBinary);
+    } catch (err) {
+      console.error("message handler:", err);
+      fail("server error");
+    }
+  });
+
+  const onMessage = (text: string, isBinary: boolean): void => {
     stats.msgsIn++;
     // token bucket: 40 messages a second sustained, bursts of 60
     const now = Date.now();
@@ -193,7 +221,6 @@ export function attach(ws: WebSocket): void {
     c.lastRefill = now;
     if (c.tokens < 1) return fail("slow down");
     c.tokens--;
-    const text = raw.toString();
     if (isBinary || text.length > MAX_MESSAGE_BYTES) return fail("message too large");
     let msg: ClientMsg;
     try {
@@ -229,14 +256,16 @@ export function attach(ws: WebSocket): void {
       return;
     }
     if (!room || !c.pid) return fail("say hello first");
-    if (msg.t === "ping") return send(c, { t: "pong", n: Number(msg.n) || 0 });
+    if (msg.t === "ping") return send(c, { t: "pong", n: typeof msg.n === "number" && Number.isFinite(msg.n) ? msg.n : 0 });
     if (msg.t === "sync") {
       flush(room);
       return welcome(room, c);
     }
     if (msg.t === "cmd") {
+      if (typeof msg.id !== "string" || msg.id.length < 1 || msg.id.length > 40) return fail("malformed command");
       if (msg.inc !== room.inc) {
-        send(c, { t: "ack", id: String(msg.id).slice(0, 40), ok: false, reason: "the server restarted: resyncing" });
+        send(c, { t: "ack", id: msg.id, ok: false, reason: "the server restarted: resyncing" });
+        flush(room);
         return welcome(room, c);
       }
       if (!isRecord(msg.c) || typeof msg.c.k !== "string") return fail("malformed command");
@@ -245,9 +274,12 @@ export function attach(ws: WebSocket): void {
       return;
     }
     fail("unknown message");
-  });
+  };
 
   ws.on("close", () => {
+    const left = (perIp.get(ip) ?? 1) - 1;
+    if (left <= 0) perIp.delete(ip);
+    else perIp.set(ip, left);
     if (!room || !c.pid) return;
     room.conns.delete(c);
     const stillHere = [...room.conns].some((o) => o.pid === c.pid);

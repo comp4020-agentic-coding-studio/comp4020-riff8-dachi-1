@@ -134,9 +134,12 @@ export class GameClient {
         this.state = m.snap;
         this.seq = m.snap.seq;
         localStorage.setItem(`plenty:token:${this.room}`, m.token);
-        // a new incarnation or stage: every pending action and buffer is obsolete
-        this.pending.clear();
-        this.samples.clear();
+        // a new incarnation or stage makes every pending action and buffer obsolete;
+        // a resync within the same one keeps them, so their acks still land
+        if (fresh) {
+          this.pending.clear();
+          this.samples.clear();
+        }
         const me = m.snap.players[m.you];
         if (me && (fresh || Math.hypot(me.x - this.me.x, me.y - this.me.y) > 1)) this.me = { x: me.x, y: me.y, dx: 0, dy: 0 };
         for (const p of Object.values(m.snap.players)) this.sample(p.id, p.x, p.y);

@@ -61,13 +61,15 @@ Server to client:
 
 **Ordering and gaps.** Every delta increments the room's `seq`. A client that sees anything but `seq + 1` asks for a fresh snapshot rather than guessing. On join, any pending changes are flushed to everyone first and the snapshot is taken immediately after, in the same synchronous turn, so the snapshot is exactly the boundary the next delta continues from.
 
-**Duplicates.** The last 64 command ids per player are remembered (and saved with the room). A retried id is acknowledged again without being applied again. Movement isn't receipted: it's idempotent.
+**Duplicates.** The last 64 applied command ids per player are remembered (and saved with the room). A retried id that was applied is acknowledged again without being applied again; a refused command isn't receipted, so retrying it is a real retry. Movement isn't receipted: it's idempotent.
 
 **Stage generation.** `gen` increments with each world. A command carrying an old `gen` is refused ("that was meant for a world that's gone"), and the client clears its pending actions and previews when a new world's snapshot arrives.
 
 **Incarnation.** Each time a room is loaded into memory it gets a fresh random `inc`. A command carrying any other `inc` is refused with a fresh snapshot, so after a server restart a browser's in-flight actions are never replayed; the client tells the player their last action may not have gone through. This is the fresh-session policy: there's no claim of exactly-once delivery.
 
-**Bounds.** 2 KB per message (`ws` `maxPayload`), a 40-per-second token bucket per connection, 32 unacknowledged commands per client, and a slow client whose send buffer passes 1 MB is disconnected rather than allowed to bloat the server or stall the room.
+**Bounds.** 2 KB per message (`ws` `maxPayload`), a 40-per-second token bucket per connection, 32 sockets per client address (generous, because a class on campus Wi-Fi shares one), 32 unacknowledged commands per client, and a slow client whose send buffer passes 1 MB is disconnected rather than allowed to bloat the server or stall the room.
+
+**Containment.** A message that throws is answered with an error and goes no further; a room whose tick throws is closed and unloaded (it reloads from its last save) without stopping the others. An independent review found a message that crashed the whole process by coercing a booby-trapped `id`; the spec now sends it.
 
 ## Persistence
 
@@ -80,7 +82,7 @@ Server to client:
 
 ## Rooms, sessions and empty rooms
 
-Room codes are five characters from a 31-letter alphabet without lookalikes. A code identifies a room; it doesn't authorise anything. Authority is the per-player token the server mints on first join (18 random bytes), which the browser keeps in localStorage per room and presents on reconnect. A second tab with the same token takes over from the first.
+Room codes are five characters from a 31-letter alphabet without lookalikes. A code identifies a room; it doesn't authorise anything. An address can create 60 rooms an hour, and rooms nobody ever joined are deleted after a day. Authority is the per-player token the server mints on first join (18 random bytes), which the browser keeps in localStorage per room and presents on reconnect. A second tab with the same token takes over from the first. A room seats eight connected players; it remembers up to 32 identities, and past that forgets the one gone longest (its buildings stay, credited to "someone"), so browsers that came once and left can never fill a room.
 
 A room with nobody connected pauses: no ticks, saved, and unloaded after a minute. Its next visitor loads it under a new incarnation. Why, and what that costs, is [ADR 0001](adr/0001-empty-rooms-pause.md).
 
