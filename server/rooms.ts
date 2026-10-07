@@ -29,6 +29,9 @@ interface LiveRoom {
   emptySince: number | null;
   lastTickAt: number;
   sentPlayers: Map<string, string>;
+  sentMoves: Map<string, string>;
+  sentArchive: number;
+  sentHistory: number;
   ch: Changes;
 }
 
@@ -55,7 +58,7 @@ function live(code: string): LiveRoom | null {
     p.connected = false;
     p.dx = p.dy = 0;
   }
-  r = { s, inc: randomUUID().slice(0, 8), conns: new Set(), dirty: false, lastSave: Date.now(), emptySince: Date.now(), lastTickAt: Date.now(), sentPlayers: new Map(), ch: newChanges() };
+  r = { s, inc: randomUUID().slice(0, 8), conns: new Set(), dirty: false, lastSave: Date.now(), emptySince: Date.now(), lastTickAt: Date.now(), sentPlayers: new Map(), sentMoves: new Map(), sentArchive: s.archive.length, sentHistory: s.history.length, ch: newChanges() };
   rooms.set(code, r);
   return r;
 }
@@ -97,25 +100,44 @@ function flush(r: LiveRoom): void {
     save(r);
     r.ch = newChanges();
     r.sentPlayers.clear();
+    r.sentMoves.clear();
     for (const c of r.conns) welcome(r, c);
     return;
   }
+  // walking is most of the traffic: send it as compact tuples, and whole
+  // player records only when something besides position changed
   const players: Player[] = [];
+  const moves: NonNullable<Delta["moves"]> = [];
+  const r2 = (v: number): number => Math.round(v * 100) / 100;
   for (const p of Object.values(s.players)) {
-    const key = JSON.stringify(p);
-    if (r.sentPlayers.get(p.id) !== key) {
-      r.sentPlayers.set(p.id, key);
+    const { x, y, dx, dy, facing, nextHarvest: _h, nextEmote: _e, ...rest } = p;
+    const full = JSON.stringify(rest);
+    const motion = `${r2(x)},${r2(y)},${dx},${dy},${facing}`;
+    if (r.sentPlayers.get(p.id) !== full) {
+      r.sentPlayers.set(p.id, full);
+      r.sentMoves.set(p.id, motion);
       players.push(p);
+    } else if (r.sentMoves.get(p.id) !== motion) {
+      r.sentMoves.set(p.id, motion);
+      moves.push([p.id, r2(x), r2(y), dx, dy, facing]);
     }
   }
-  const any = players.length || ch.tiles.size || ch.buildings.size || ch.removed.length || ch.meta || ch.log;
+  const any = players.length || moves.length || ch.tiles.size || ch.buildings.size || ch.removed.length || ch.meta || ch.log;
   if (!any) return;
   s.seq++;
   const d: Delta = { t: "delta", seq: s.seq, gen: s.gen, tick: s.tick, players };
+  if (moves.length) d.moves = moves;
   if (ch.tiles.size) d.tiles = [...ch.tiles].map((i) => [i, s.tiles[i]]);
   if (ch.buildings.size) d.buildings = s.buildings.filter((b) => ch.buildings.has(b.id));
   if (ch.removed.length) d.removed = ch.removed;
-  if (ch.meta) d.meta = { inventory: s.inventory, ledger: s.ledger, econ: s.econ, heat: s.heat, reserve: s.reserve, phase: s.phase, archive: s.archive, history: s.history, hostId: s.hostId };
+  if (ch.meta) {
+    d.meta = { inventory: s.inventory, ledger: s.ledger, econ: s.econ, heat: s.heat, reserve: s.reserve, phase: s.phase, hostId: s.hostId };
+    // the archive and history only ever grow: resend them only when they have
+    if (s.archive.length !== r.sentArchive) d.meta.archive = s.archive;
+    if (s.history.length !== r.sentHistory) d.meta.history = s.history;
+    r.sentArchive = s.archive.length;
+    r.sentHistory = s.history.length;
+  }
   if (ch.log) d.log = s.log.slice(-ch.log);
   r.dirty = true;
   r.ch = newChanges();

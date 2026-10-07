@@ -48,6 +48,7 @@ ws.on("message", (raw) => {
     if (fresh) console.log(`${((Date.now() - started) / 1000).toFixed(0)}s: ${STAGES[s.stage].name}${s.phase.k === "ended" ? " (ended)" : ""}`);
   } else if (m.t === "delta" && s) {
     for (const p of m.players) s.players[p.id] = p;
+    for (const [id, x, y] of m.moves ?? []) if (s.players[id]) Object.assign(s.players[id], { x, y });
     for (const [i, t] of m.tiles ?? []) s.tiles[i] = t;
     for (const b of m.buildings ?? []) {
       const at = s.buildings.findIndex((q) => q.id === b.id);

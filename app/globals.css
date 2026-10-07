@@ -83,7 +83,7 @@ kbd { background: var(--paper-2); border: 1px solid var(--line); border-radius: 
 .corner-buttons { position: absolute; right: 0.6rem; top: 50%; transform: translateY(-50%); display: flex; flex-direction: column; gap: 0.35rem; align-items: flex-end; }
 .emotes { display: flex; gap: 0.2rem; }
 .emotes button { padding: 0.2rem 0.35rem; }
-.settings { right: 10rem; top: 50%; transform: translateY(-50%); display: grid; gap: 0.3rem; }
+.settings { right: 9.5rem; top: calc(50% + 2.5rem); display: grid; gap: 0.3rem; }
 .overlay { position: absolute; inset: 0; pointer-events: none; }
 .overlay > * { pointer-events: auto; }
 .overlay.center { display: grid; place-items: center; background: rgba(20, 16, 24, 0.25); }
@@ -108,3 +108,4 @@ kbd { background: var(--paper-2); border: 1px solid var(--line); border-radius: 
 .sr-only { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; }
 .card .title { font-size: 2rem; font-weight: 700; margin: 0; }
 .loading h1 { font-size: 1.2rem; font-weight: 500; }
+.bottleneck { margin-top: 0.3rem; border-top: 1px solid rgba(0, 0, 0, 0.12); padding-top: 0.25rem; }

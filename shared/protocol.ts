@@ -160,14 +160,15 @@ export interface Delta {
   seq: number;
   gen: number;
   tick: number;
+  /** players whose non-movement fields changed, in full */
   players: Player[];
+  /** everyone else who moved: [id, x, y, dx, dy, facing], positions to 0.01 tile */
+  moves?: [string, number, number, number, number, number][];
   tiles?: [number, Tile][];
   buildings?: Building[];
   removed?: number[];
-  meta?: Pick<
-    RoomState,
-    "inventory" | "ledger" | "econ" | "heat" | "reserve" | "phase" | "archive" | "history" | "hostId"
-  >;
+  meta?: Pick<RoomState, "inventory" | "ledger" | "econ" | "heat" | "reserve" | "phase" | "hostId"> &
+    Partial<Pick<RoomState, "archive" | "history">>;
   log?: LogEntry[];
 }
 

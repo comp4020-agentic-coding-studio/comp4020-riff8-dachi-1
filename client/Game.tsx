@@ -471,6 +471,12 @@ function RoomPanel({ s, client, host }: { s: Snapshot; client: GameClient; host:
 function Economy({ s }: { s: Snapshot }): ReactNode {
   const st = STAGES[s.stage];
   const e = s.econ;
+  // the shortage most of the machine is waiting on, so nobody has to inspect buildings one by one
+  const idle = s.buildings.filter((b) => b.status !== "ok" && b.work >= BUILDINGS[b.type].build * 10);
+  const tally = new Map<string, number>();
+  for (const b of idle) tally.set(b.status, (tally.get(b.status) ?? 0) + 1);
+  const top = [...tally].sort((a, b) => b[1] - a[1])[0];
+  const bottleneck = top ? { n: idle.length, why: top[0] } : null;
   return (
     <div className="panel left">
       <h2>Stockpile (shared)</h2>
@@ -493,6 +499,11 @@ function Economy({ s }: { s: Snapshot }): ReactNode {
           Workers {e.workersUsed}/{e.workersSupply}
         </li>
       </ul>
+      {bottleneck && (
+        <p className="small bottleneck">
+          <strong>⚠ {bottleneck.n} idle</strong>, mostly “{bottleneck.why.replace(/^(idle|unserved|throttled): /, "")}”
+        </p>
+      )}
     </div>
   );
 }

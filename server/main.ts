@@ -90,7 +90,16 @@ const server = createServer(async (req, res) => {
       return res.end(await readme());
     }
     if (url.pathname === "/api/health") {
-      return json(res, 200, { ok: true, rooms: roomCount(), tickMsLast: +stats.tickMsLast.toFixed(2), tickMsMax: +stats.tickMsMax.toFixed(2), rssMb: Math.round(process.memoryUsage().rss / 1e6) });
+      return json(res, 200, {
+        ok: true,
+        rooms: roomCount(),
+        tickMsLast: +stats.tickMsLast.toFixed(2),
+        tickMsMax: +stats.tickMsMax.toFixed(2),
+        rssMb: Math.round(process.memoryUsage().rss / 1e6),
+        bytesOut: stats.bytesOut,
+        msgsIn: stats.msgsIn,
+        uptimeS: Math.round(process.uptime()),
+      });
     }
     if (url.pathname === "/api/rooms") {
       if (req.method !== "POST") return json(res, 405, { error: "POST only" });

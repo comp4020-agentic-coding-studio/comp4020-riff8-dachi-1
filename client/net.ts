@@ -182,6 +182,13 @@ export class GameClient {
       this.sample(p.id, p.x, p.y);
       if (p.id === this.you) this.reconcile(p.x, p.y);
     }
+    for (const [id, x, y, dx, dy, facing] of d.moves ?? []) {
+      const p = s.players[id];
+      if (!p) continue;
+      Object.assign(p, { x, y, dx, dy, facing });
+      this.sample(id, x, y);
+      if (id === this.you) this.reconcile(x, y);
+    }
     for (const [i, t] of d.tiles ?? []) {
       const before = s.tiles[i]?.amt ?? 0;
       s.tiles[i] = t;

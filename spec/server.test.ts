@@ -34,6 +34,7 @@ class Bot {
       if (m.t === "delta" && this.snap) {
         for (const [i, t] of m.tiles ?? []) this.snap.tiles[i] = t;
         for (const p of m.players) this.snap.players[p.id] = p;
+        for (const [id, x, y] of m.moves ?? []) Object.assign(this.snap.players[id] ?? {}, { x, y });
       }
       for (const w of this.waiters.splice(0)) w();
     });
