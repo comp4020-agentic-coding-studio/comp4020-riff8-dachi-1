@@ -291,11 +291,11 @@ export default function Game({ room, name }: { room: string; name: string }): Re
   };
 
   const st = s ? STAGES[s.stage] : null;
-  const me = s && client ? s.players[client.you] : null;
   const host = !!(s && client && s.hostId === client.you);
 
   return (
-    <div className="game">
+    <main className="game">
+      <h1 className="sr-only">{st ? `Plenty: ${st.name}, room ${room}` : "Plenty"}</h1>
       <canvas
         ref={canvasRef}
         className="world"
@@ -312,7 +312,7 @@ export default function Game({ room, name }: { room: string; name: string }): Re
       {!s || !client || !st ? (
         <div className="overlay center">
           <div className="card">
-            <h1>Plenty</h1>
+            <p className="title">Plenty</p>
             <p>{client?.status === "error" ? client.error : "Walking to the world…"}</p>
             {client?.status === "error" && <a href="/">Back to the start</a>}
           </div>
@@ -378,10 +378,9 @@ export default function Game({ room, name }: { room: string; name: string }): Re
           {s.phase.k === "transition" && <Transition s={s} />}
           {s.phase.k === "ended" && <Ending s={s} />}
           <Toasts client={client} />
-          {me && !me.connected && null}
         </>
       )}
-    </div>
+    </main>
   );
 }
 
@@ -540,18 +539,22 @@ function BuildBar({ s, view, onPick, onTool }: { s: Snapshot; view: View; onPick
             className={`build ${view.build === type ? "on" : ""} ${short.length ? "short" : ""}`}
             aria-pressed={view.build === type}
             title={def.blurb}
+            aria-label={`${buildingName(st, type)}, costs ${cost || "nothing"}${short.length ? ", can't afford yet" : ""}`}
             onClick={() => onPick(type)}
           >
             <span className="key">{i + 1}</span>
             <span className="bname">{buildingName(st, type)}</span>
-            <span className="cost">{cost || "free"}{short.length ? " · can't afford" : ""}</span>
+            <span className="cost">
+              {short.length ? "✕ " : ""}
+              {cost || "free"}
+            </span>
           </button>
         );
       })}
       <span className="sep" aria-hidden="true" />
       {(["harvest", "inspect", "demolish", "mark"] as Tool[]).map((t) => (
         <button key={t} type="button" className={`tool ${view.tool === t ? "on" : ""}`} aria-pressed={view.tool === t} onClick={() => onTool(t)}>
-          {{ harvest: "Harvest (E)", inspect: "Inspect (I)", demolish: "Take down (X)", mark: "Name place (N)", build: "" }[t]}
+          {{ harvest: "Harvest (E)", inspect: "Inspect (I)", demolish: "Take down (X)", mark: "Name (N)", build: "" }[t]}
         </button>
       ))}
     </div>
@@ -562,7 +565,7 @@ function Log({ s, client }: { s: Snapshot; client: GameClient }): ReactNode {
   void client;
   return (
     <div className="panel log" aria-live="polite" aria-label="Activity">
-      {s.log.slice(-5).map((l, i) => (
+      {s.log.slice(-4).map((l, i) => (
         <p key={`${l.tick}-${i}`}>{l.text}</p>
       ))}
     </div>

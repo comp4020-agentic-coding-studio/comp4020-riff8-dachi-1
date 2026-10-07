@@ -7,7 +7,11 @@ import { useEffect, useState, type FormEvent } from "react";
 
 const Game = dynamic(() => import("../../client/Game.tsx"), {
   ssr: false,
-  loading: () => <p className="loading">Loading the world…</p>,
+  loading: () => (
+    <main className="loading">
+      <h1>Loading the world…</h1>
+    </main>
+  ),
 });
 
 export default function PlayShell() {
@@ -20,7 +24,12 @@ export default function PlayShell() {
     setName(localStorage.getItem("plenty:name"));
   }, []);
 
-  if (room === null) return <p className="loading">Loading…</p>;
+  if (room === null)
+    return (
+      <main className="loading">
+        <h1>Loading…</h1>
+      </main>
+    );
   if (!room)
     return (
       <main className="landing">
