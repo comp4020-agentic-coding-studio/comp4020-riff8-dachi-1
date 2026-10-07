@@ -319,9 +319,12 @@ export default function Game({ room, name }: { room: string; name: string }): Re
         </div>
       ) : (
         <>
-          <Top s={s} client={client} host={host} />
-          <Economy s={s} />
-          {st.id === "earth" && s.phase.k === "play" && <Memo s={s} />}
+          <div className="col-left">
+            <StagePanel s={s} />
+            <Economy s={s} />
+            {st.id === "earth" && s.phase.k === "play" && <Memo s={s} />}
+          </div>
+          <RoomPanel s={s} client={client} host={host} />
           <BuildBar s={s} view={view} onPick={chooseBuild} onTool={setTool} />
           <Log s={s} client={client} />
           {view.selected !== null && <Inspect s={s} b={s.buildings.find((b) => b.id === view.selected)} youId={client.you} host={host} onDemolish={(b) => client.send({ k: "demolish", x: b.x, y: b.y })} onClose={() => setTool("harvest")} />}
@@ -382,14 +385,11 @@ export default function Game({ room, name }: { room: string; name: string }): Re
   );
 }
 
-function Top({ s, client, host }: { s: Snapshot; client: GameClient; host: boolean }): ReactNode {
+function StagePanel({ s }: { s: Snapshot }): ReactNode {
   const st = STAGES[s.stage];
   const land = s.tiles.filter((t) => t.t === 0 || t.t === 1 || t.t === 3);
   const life = Math.round(land.reduce((a, t) => a + t.life, 0) / Math.max(1, land.length));
-  const [copied, setCopied] = useState(false);
-  const status = { live: "connected", connecting: "connecting…", reconnecting: "reconnecting…", error: "disconnected" }[client.status];
   return (
-    <>
       <div className="panel top-left">
         <p className="stage">
           <span className="stage-n">Stage {s.stage + 1} of 5</span> <strong>{st.name}</strong>
@@ -426,6 +426,13 @@ function Top({ s, client, host }: { s: Snapshot; client: GameClient; host: boole
           )}
         </p>
       </div>
+  );
+}
+
+function RoomPanel({ s, client, host }: { s: Snapshot; client: GameClient; host: boolean }): ReactNode {
+  const [copied, setCopied] = useState(false);
+  const status = { live: "connected", connecting: "connecting…", reconnecting: "reconnecting…", error: "disconnected" }[client.status];
+  return (
       <div className="panel top-right">
         <p>
           Room <strong className="code">{s.code}</strong>{" "}
@@ -459,7 +466,6 @@ function Top({ s, client, host }: { s: Snapshot; client: GameClient; host: boole
         </ul>
         {host && <p className="small">You're the host: you can take down anyone's buildings.</p>}
       </div>
-    </>
   );
 }
 
