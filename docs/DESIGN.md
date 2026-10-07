@@ -24,7 +24,7 @@ Explore, gather by hand, choose a tile, build, gain a capability, meet a new dem
 
 ## Economy
 
-Everything is whole numbers, defined in [`shared/content.ts`](../shared/content.ts).
+Everything is whole numbers, defined in [`shared/content.ts`](../shared/content.ts). Units are normalised per world rather than scaled up: a world holds about a thousand units whatever it is, so a galaxy and a grove are both "a deposit of about sixteen" and no large-number representation is needed. The scale is told by the names, the map and the camera, not by digits.
 
 - **Natural stock**: deposits on tiles, finite. Three families per world (matter, mineral, coolant), relabelled per world: timber, stone and fresh water on Earth; plasma, magnetics and shade on the Sun.
 - **Inventory**: the room's single shared stockpile. Spending is atomic and can't go negative.
