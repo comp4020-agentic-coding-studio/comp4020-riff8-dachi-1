@@ -105,7 +105,8 @@ export class GameClient {
 
   toast(text: string, kind: Toast["kind"] = "info"): void {
     const t = { id: ++this.toastId, text, kind };
-    this.toasts = [...this.toasts.slice(-3), t];
+    // the same message again replaces itself rather than stacking up
+    this.toasts = [...this.toasts.filter((x) => x.text !== text).slice(-2), t];
     this.bump();
     setTimeout(() => {
       this.toasts = this.toasts.filter((x) => x.id !== t.id);

@@ -128,9 +128,9 @@ export default function Game({ room, name }: { room: string; name: string }): Re
     };
     const down = (e: KeyboardEvent): void => {
       if (e.ctrlKey || e.metaKey || e.altKey) return;
-      const el = e.target as HTMLElement;
-      if (el.closest("input, textarea, select, dialog")) return;
-      if (el.closest("button, a") && (e.key === "Enter" || e.key === " ")) return;
+      const el = e.target instanceof Element ? e.target : null;
+      if (el?.closest("input, textarea, select, dialog")) return;
+      if (el?.closest("button, a") && (e.key === "Enter" || e.key === " ")) return;
       const k = e.key.toLowerCase();
       const st = client.state ? STAGES[client.state.stage] : null;
       if (KEY_DIRS[k]) {

@@ -211,7 +211,7 @@ export function placementProblem(s: RoomState, type: BuildingType, x: number, y:
     const t = tileAt(s, fx, fy);
     if (!t) return "off the edge of the map";
     if (t.b) return "something is already built here";
-    if (t.d) return `there's ${st.families[t.d].label} here: harvest it first`;
+    if (t.d && t.amt > 0) return `there's ${st.families[t.d].label} here: harvest it first`;
     if (t.t === 1) return "can't build on water";
     if (t.t === 3) return "can't build on the star itself";
     if (t.t === 2 && type !== "relay") return "nothing to build on: only relays float in open space";

@@ -223,6 +223,18 @@ describe("commands", () => {
     expect(r.ok).toBe(false);
   });
 
+  it("lets a spent deposit be built on", () => {
+    const { s, ch } = room();
+    s.inventory = { matter: 100, mineral: 100, coolant: 100 };
+    const i = s.tiles.findIndex((t) => t.d && t.t === 0);
+    const [x, y] = at(s, i);
+    stand(s, "a", x, y);
+    s.ledger[s.tiles[i].d!].extracted += s.tiles[i].amt;
+    s.ledger[s.tiles[i].d!].remaining -= s.tiles[i].amt;
+    s.tiles[i].amt = 0;
+    expect(applyCommand(s, "a", id(), s.gen, { k: "build", x, y, type: "plaza" }, ch)).toEqual({ ok: true });
+  });
+
   it("cleans names: control characters stripped, length capped", () => {
     const { s, ch } = room();
     const [x, y] = freeTile(s, 1);
