@@ -112,7 +112,8 @@ setInterval(() => {
     if (pv.food < 60) {
       if (pv.items.ration) return send({ k: "eat", item: "ration" });
       if (pv.items.meal) return send({ k: "eat", item: "meal" });
-      if (pv.food < 25 && s.buildings.some((b) => b.type === "campfire" && Math.hypot(b.x - me.x, b.y - me.y) < 3)) return send({ k: "craft", recipe: "ration" });
+      const canRation = (pv.items.matter ?? 0) >= 2 && (pv.items.coolant ?? 0) >= 1;
+      if (pv.food < 25 && canRation && s.buildings.some((b) => b.type === "campfire" && Math.hypot(b.x - me.x, b.y - me.y) < 3)) return send({ k: "craft", recipe: "ration" });
     }
     for (const r of RECIPES.filter((q) => (q.id === "axe" || q.id === "pick") && !q.station))
       if ("tool" in r.out && !pv.tools.some((t) => t.kind === (r.out as { tool: string }).tool) && Object.entries(r.in).every(([k, n]) => (pv.items[k as keyof typeof pv.items] ?? 0) >= (n ?? 0)))
@@ -121,8 +122,9 @@ setInterval(() => {
       const spot = spotFor("campfire", me);
       if (spot && Math.hypot(spot[0] - me.x, spot[1] - me.y) <= 6) return send({ k: "build", x: spot[0], y: spot[1], type: "campfire" });
     }
-    const keep = pv.food < 40 ? 4 : 0;
-    for (const f of FAMILIES) if ((pv.items[f] ?? 0) > keep + 2) return send({ k: "donate", item: f, n: (pv.items[f] ?? 0) - keep });
+    // keep enough for a ration when hungry
+    const keep = (f: string): number => (pv.food < 40 ? (f === "matter" ? 2 : f === "coolant" ? 1 : 0) : 0);
+    for (const f of FAMILIES) if ((pv.items[f] ?? 0) > keep(f) + 2) return send({ k: "donate", item: f, n: (pv.items[f] ?? 0) - keep(f) });
     const tool = pv.tools.find((t) => t.kind === "axe" || t.kind === "pick");
     if (tool && !s.players[you].holding) send({ k: "hold", tool: tool.id });
   }

@@ -562,7 +562,7 @@ export const EARTH_FAUNA: Record<AnimalKind, number> = { deer: 6, rabbit: 8, boa
 export const MAX_HP = 100;
 export const MAX_FOOD = 100;
 /** ticks between one point of hunger while connected (normal pace) */
-export const HUNGER_TICKS = 60;
+export const HUNGER_TICKS = 120;
 export const SPRINT = 1.6;
 /** ticks a death bag stays owner-only before anyone may open it */
 export const BAG_PRIVATE_TICKS = 3000;

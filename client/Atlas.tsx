@@ -60,7 +60,7 @@ export function Atlas({ s, onClose }: { s?: Snapshot; onClose?: () => void }): R
         <div className="pack-head">
           <h2 id="atlas-h">World Atlas</h2>
           <button type="button" onClick={onClose} autoFocus>
-            Close (M)
+            Close (Esc)
           </button>
         </div>
         {body}

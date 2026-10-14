@@ -1222,6 +1222,8 @@ function hurt(s: RoomState, p: Player, amount: number, cause: string, ch: Change
   const dmg = wearing(s, p.id) ? Math.ceil(amount / 2) : amount;
   if (wearing(s, p.id)) wear(s, p, ch, "coat");
   p.hp = Math.max(0, p.hp - dmg);
+  s.priv[p.id].hurt = { cause, tick: s.tick };
+  ch.priv.add(p.id);
   if (p.hp > 0) return;
   // death: everything carried waits in a bag where they fell, theirs alone for a while;
   // the coat stays on, and they wake at the spawn, fed enough to get back to it

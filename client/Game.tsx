@@ -65,6 +65,8 @@ export default function Game({ room, name }: { room: string; name: string }): Re
   const [settings, setSettings] = useState(false);
   const [pack, setPack] = useState(false);
   const [atlas, setAtlas] = useState(false);
+  const atlasOpen = useRef(false);
+  atlasOpen.current = atlas;
   const [chatting, setChatting] = useState(false);
   const [muted, setMuted] = useState<Set<string>>(new Set());
   const [locked, setLocked] = useState(false);
@@ -172,7 +174,18 @@ export default function Game({ room, name }: { room: string; name: string }): Re
     const down = (e: KeyboardEvent): void => {
       if (e.ctrlKey || e.metaKey || e.altKey) return;
       const el = e.target instanceof Element ? e.target : null;
-      if (el?.closest("input, textarea, select, dialog, [role=dialog]")) return;
+      // inside a dialog, Tab moves between its controls, and Esc (or the panel's own key) closes it
+      if (el?.closest("dialog, [role=dialog]") && !el.closest("input, textarea, select")) {
+        const key = e.key.toLowerCase();
+        if (key === "escape" || (key === "m" && atlasOpen.current)) {
+          setPack(false);
+          setAtlas(false);
+          setHelp(false);
+          canvasRef.current?.focus();
+        }
+        return;
+      }
+      if (el?.closest("input, textarea, select")) return;
       if (el?.closest("button, a") && (e.key === "Enter" || e.key === " ")) return;
       const k = e.key.toLowerCase();
       const st = client.state ? STAGES[client.state.stage] : null;
@@ -743,7 +756,7 @@ function Memo({ s }: { s: Snapshot }): ReactNode {
     ["Make a stone axe or pick (Tab), then hold it (G)", !!s.me?.tools.length],
     ["Put down a Campfire and a Chest of your own", has("campfire") && has("chest")],
     ["Give stock to the Cooperative store (Tab)", FAMILIES.some((f) => s.inventory[f] > 0) || has("city")],
-    ["Build Cottages for workers", has("city")],
+    ["Build Cottages: residents drink water from the store, so give it some", has("city")],
     ["Power them: a Furnace or a Sun Garden", has("furnace") || has("solar")],
     ["Build a Datacentre (it drinks pond water)", has("datacentre")],
     ["Put a Harvester beside a grove", has("extractor")],

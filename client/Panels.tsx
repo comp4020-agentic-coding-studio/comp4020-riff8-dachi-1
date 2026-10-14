@@ -43,6 +43,11 @@ export function Vitals({ s, client }: { s: Snapshot; client: GameClient }): Reac
         In hand: <strong>{held ? `${TOOLS[held.kind].name} (${held.dur})` : "bare hands"}</strong>
         {me.tools.some((t) => t.kind === "coat") ? " · wearing a hide coat" : ""}
       </p>
+      {me.hurt && s.tick - me.hurt.tick < 100 && (
+        <p className="small bad">
+          Hurt by {me.hurt.cause} (−health). {/bite/.test(me.hurt.cause) ? "Fight back (F) or walk away; a coat halves bites." : me.hurt.cause === "hunger" ? "Eat something (Tab)." : me.hurt.cause === "lack of air" ? "Get inside a working dome." : "Build radiators or get clear."}
+        </p>
+      )}
       {me.food === 0 && <p className="small bad">Starving costs health. Cook a ration at a campfire (Tab).</p>}
     </div>
   );
@@ -65,7 +70,7 @@ export function PackPanel({ s, client, onClose }: { s: Snapshot; client: GameCli
         <div className="pack-head">
           <h2 id="pack-h">Your pack</h2>
           <button type="button" onClick={onClose} autoFocus>
-            Close (Tab)
+            Close (Esc)
           </button>
         </div>
         <p className="small">Only you can see this. What you gather is yours; give raw stock to the Cooperative store to build shared works.</p>
@@ -286,7 +291,7 @@ export function TownPanel({ s, host, client }: { s: Snapshot; host: boolean; cli
         </ul>
       )}
       <p className="small">
-        Wildlife: {s.fauna?.alive ?? 0} of {s.fauna?.founded ?? 0} left{s.fauna?.hunted ? `, ${s.fauna.hunted} hunted` : ""}
+        {s.stage === 0 ? "Wildlife" : "Earth's wildlife, left behind"}: {s.fauna?.alive ?? 0} of {s.fauna?.founded ?? 0} alive{s.fauna?.hunted ? `, ${s.fauna.hunted} hunted` : ""}
         {s.fauna?.starved ? `, ${s.fauna.starved} starved` : ""}.
       </p>
     </div>

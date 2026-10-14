@@ -57,6 +57,8 @@ export interface Private {
   food: number;
   /** suit air on Mars: refills inside a working dome's air, runs down outside */
   air?: number;
+  /** what last hurt you, and when: the vitals panel says why your health is falling */
+  hurt?: { cause: string; tick: number };
 }
 
 export type ChestAccess = "owner" | "public";
