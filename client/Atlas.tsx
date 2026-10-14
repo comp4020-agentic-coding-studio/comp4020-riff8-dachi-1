@@ -10,7 +10,7 @@ import type { Snapshot } from "../shared/protocol.ts";
 const WHAT: Record<string, string> = {
   pollution: "Survive, build a home, power a town. Furnaces are strong; their smoke kills groves.",
   pressure: "Suit air runs out outside a dome. Domes and datacentres drink the same buried ice.",
-  heat: "Collector platforms in the corona. Past the heat limit, scoops throttle and the platforms hurt.",
+  heat: "Power pours in, and so does heat. Past the limit, scoops throttle and the platforms hurt.",
   relay: "No sunlight: every machine drinks the Bottled Sun. Relays link miners to the Depot.",
   legacy: "Your spent worlds hum along as engines. If everyone agrees, you can stop.",
 };
@@ -32,7 +32,6 @@ export function Atlas({ s, onClose }: { s?: Snapshot; onClose?: () => void }): R
                 <p className="small">{WHAT[st.mechanic]}</p>
                 <p className="small">
                   Stock: {FAMILIES.map((f) => st.families[f].label).join(", ")}
-                  {done ? "" : ` (${FAMILIES.reduce((a, f) => a + st.families[f].tiles * st.families[f].perTile, 0)} units)`}
                 </p>
                 {done && (
                   <p className="small">
