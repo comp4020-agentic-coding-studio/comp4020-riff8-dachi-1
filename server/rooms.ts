@@ -3,7 +3,7 @@
 // minute, so an empty campaign never advances while its players are away.
 import { randomBytes, randomUUID } from "node:crypto";
 import type { WebSocket } from "ws";
-import { MAX_MESSAGE_BYTES, PROTOCOL_VERSION, type ClientMsg, type Delta, type Player, type RoomState, type ServerMsg, type Snapshot } from "../shared/protocol.ts";
+import { MAX_MESSAGE_BYTES, PROTOCOL_VERSION, type BagView, type ChestView, type ClientMsg, type Command, type Delta, type Player, type RoomState, type ServerMsg, type Snapshot } from "../shared/protocol.ts";
 import { PACES, TICK_MS, type Pace } from "../shared/content.ts";
 import { applyCommand, createRoom, join, leave, newChanges, tick, type Changes } from "../shared/sim.ts";
 import { loadRoom, roomExists, saveRoom } from "./store.ts";
@@ -15,6 +15,8 @@ const MAX_CATCHUP_TICKS = 3;
 interface Conn {
   ws: WebSocket;
   pid: string | null;
+  /** this connection's own stream sequence: each recipient's deltas differ (private state), so each has its own count */
+  seq: number;
   tokens: number;
   lastRefill: number;
 }
@@ -63,9 +65,43 @@ function live(code: string): LiveRoom | null {
   return r;
 }
 
-const snapshot = (s: RoomState): Snapshot => {
-  const { tokens: _t, receipts: _r, ...snap } = s;
-  return snap;
+/** What one player may see of a chest: who owns it always, what's inside only if they may open it. */
+export const chestView = (s: RoomState, id: number, pid: string): ChestView | null => {
+  const c = s.chests[id];
+  if (!c) return null;
+  const v: ChestView = { owner: c.owner, ownerName: s.players[c.owner]?.name ?? "someone", access: c.access };
+  if (c.owner === pid || c.access === "public") v.items = c.items;
+  return v;
+};
+const bagViews = (s: RoomState): BagView[] =>
+  s.bags.map(({ items, tools, ...rest }) => ({ ...rest, n: Object.values(items).reduce((a, n) => a + (n ?? 0), 0) + tools.length }));
+
+/** One player's view of the room: no tokens, no receipts, nobody else's pack or locked chest. */
+export const snapshot = (s: RoomState, pid: string, seq: number): Snapshot => {
+  const { tokens: _t, receipts: _r, priv, chests, bags: _b, ...rest } = s;
+  const views: Record<number, ChestView> = {};
+  for (const id of Object.keys(chests)) views[Number(id)] = chestView(s, Number(id), pid)!;
+  return { ...rest, seq, me: priv[pid] ?? null, chests: views, bags: bagViews(s) };
+};
+
+/** Who did what, one line per action, for `flyctl logs`: a player's public tag and name, never a token. */
+function audit(r: LiveRoom, pid: string | null, text: string): void {
+  const p = pid ? r.s.players[pid] : null;
+  console.log(`[${r.s.code}] ${p ? `${p.tag} ${JSON.stringify(p.name)}` : "-"} ${text}`);
+}
+
+const describe = (c: Command): string => {
+  switch (c.k) {
+    case "harvest":
+    case "demolish":
+      return `${c.k} ${c.x},${c.y}`;
+    case "build":
+      return `build ${c.type} ${c.x},${c.y}`;
+    case "mark":
+      return `name ${c.x},${c.y} ${String(JSON.stringify(c.name) ?? "").slice(0, 40)}`;
+    default:
+      return JSON.stringify(c).slice(0, 80);
+  }
 };
 
 function send(c: Conn, msg: ServerMsg): void {
@@ -82,7 +118,7 @@ function send(c: Conn, msg: ServerMsg): void {
 
 function welcome(r: LiveRoom, c: Conn): void {
   if (!c.pid) return;
-  send(c, { t: "welcome", v: PROTOCOL_VERSION, inc: r.inc, you: c.pid, token: r.s.tokens[c.pid], snap: snapshot(r.s) });
+  send(c, { t: "welcome", v: PROTOCOL_VERSION, inc: r.inc, you: c.pid, token: r.s.tokens[c.pid], snap: snapshot(r.s, c.pid, c.seq) });
 }
 
 function save(r: LiveRoom): void {
@@ -96,6 +132,7 @@ function flush(r: LiveRoom): void {
   const ch = r.ch;
   const s = r.s;
   if (ch.boundary) {
+    for (const line of ch.audit.splice(0)) audit(r, null, line);
     // persist the boundary before anyone hears about it
     save(r);
     r.ch = newChanges();
@@ -122,10 +159,15 @@ function flush(r: LiveRoom): void {
       moves.push([p.id, r2(x), r2(y), dx, dy, facing]);
     }
   }
-  const any = players.length || moves.length || ch.tiles.size || ch.buildings.size || ch.removed.length || ch.meta || ch.log;
-  if (!any) return;
+  for (const line of ch.audit.splice(0)) audit(r, null, line);
+  const shared = players.length || moves.length || ch.tiles.size || ch.buildings.size || ch.removed.length || ch.meta || ch.log || ch.animals || ch.bags || ch.town;
+  if (!shared && !ch.priv.size && !ch.chests.size) return;
   s.seq++;
-  const d: Delta = { t: "delta", seq: s.seq, gen: s.gen, tick: s.tick, players };
+  const d: Delta = { t: "delta", seq: 0, gen: s.gen, tick: s.tick, players };
+  if (ch.animals) d.animals = s.animals;
+  if (ch.bags) d.bags = bagViews(s);
+  if (ch.town) d.town = s.town;
+  if (ch.meta) d.fauna = s.fauna;
   if (moves.length) d.moves = moves;
   if (ch.tiles.size) d.tiles = [...ch.tiles].map((i) => [i, s.tiles[i]]);
   if (ch.buildings.size) d.buildings = s.buildings.filter((b) => ch.buildings.has(b.id));
@@ -141,7 +183,17 @@ function flush(r: LiveRoom): void {
   if (ch.log) d.log = s.log.slice(-ch.log);
   r.dirty = true;
   r.ch = newChanges();
-  for (const c of r.conns) if (c.pid) send(c, d);
+  // the shared part is the same for everyone; private state and chest contents
+  // go only to who may see them, and each recipient's stream counts its own seq
+  for (const c of r.conns) {
+    if (!c.pid) continue;
+    const mine = ch.priv.has(c.pid);
+    if (!shared && !mine && !ch.chests.size) continue;
+    const out: Delta = { ...d, seq: ++c.seq };
+    if (mine) out.me = s.priv[c.pid];
+    if (ch.chests.size) out.chests = [...ch.chests].map((id) => [id, chestView(s, id, c.pid!)]);
+    send(c, out);
+  }
 }
 
 export function stepAll(): void {
@@ -199,7 +251,7 @@ export function attach(ws: WebSocket, ip: string): void {
     return;
   }
   perIp.set(ip, open + 1);
-  const c: Conn = { ws, pid: null, tokens: 60, lastRefill: Date.now() };
+  const c: Conn = { ws, pid: null, seq: 0, tokens: 60, lastRefill: Date.now() };
   let room: LiveRoom | null = null;
   const fail = (reason: string): void => send(c, { t: "error", reason });
 
@@ -244,11 +296,13 @@ export function attach(ws: WebSocket, ip: string): void {
       }
       const id = pid ?? randomUUID().slice(0, 12);
       const token = pid ? s.tokens[pid] : randomBytes(18).toString("base64url");
+      if (pid && s.players[pid]?.banned) return fail("the host removed you from this room");
       const p = join(s, id, token, typeof msg.name === "string" ? msg.name : "", r.ch);
       if (!p) return fail("this room is full");
       room = r;
       c.pid = id;
       r.conns.add(c);
+      audit(r, id, pid ? "rejoined" : "joined (new identity)");
       r.emptySince = null;
       // pending changes go out first, so the snapshot is the exact boundary for later deltas
       flush(r);
@@ -270,7 +324,22 @@ export function attach(ws: WebSocket, ip: string): void {
       }
       if (!isRecord(msg.c) || typeof msg.c.k !== "string") return fail("malformed command");
       const res = applyCommand(room.s, c.pid, msg.id, msg.gen, msg.c, room.ch);
-      if (msg.c.k !== "move") send(c, res.ok ? { t: "ack", id: msg.id, ok: true } : { t: "ack", id: msg.id, ok: false, reason: res.reason });
+      if (room.ch.kicked) {
+        for (const other of room.conns)
+          if (other.pid === room.ch.kicked) {
+            other.ws.close(4003, "removed by the host");
+            // and stop listening now, in case it ignores the close
+            room.conns.delete(other);
+            setTimeout(() => other.ws.terminate(), 2000);
+          }
+        room.ch.kicked = undefined;
+      }
+      if (msg.c.k === "say") audit(room, c.pid, `say ${String(JSON.stringify((msg.c as { text?: unknown }).text) ?? "").slice(0, 130)} -> ${res.ok ? "ok" : `refused: ${res.reason}`}`);
+      else if (msg.c.k !== "move") {
+        audit(room, c.pid, `${describe(msg.c as Command)} -> ${res.ok ? "ok" : `refused: ${res.reason}`}`);
+        for (const line of room.ch.audit.splice(0)) audit(room, c.pid, `  ${line}`);
+        send(c, res.ok ? { t: "ack", id: msg.id, ok: true } : { t: "ack", id: msg.id, ok: false, reason: res.reason });
+      }
       return;
     }
     fail("unknown message");
@@ -283,7 +352,10 @@ export function attach(ws: WebSocket, ip: string): void {
     if (!room || !c.pid) return;
     room.conns.delete(c);
     const stillHere = [...room.conns].some((o) => o.pid === c.pid);
-    if (!stillHere) leave(room.s, c.pid, room.ch);
+    if (!stillHere) {
+      leave(room.s, c.pid, room.ch);
+      audit(room, c.pid, "left");
+    }
     flush(room);
     if (room.conns.size === 0) {
       room.emptySince = Date.now();

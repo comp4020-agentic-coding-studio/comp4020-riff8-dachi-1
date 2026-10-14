@@ -1,7 +1,7 @@
 // Deterministic stage generation: the server seeds it, the browser never
 // does. Same (seed, stage) always yields the same map, which is what makes
 // regenerating a stage after a crash at the transition boundary safe.
-import { BUILDINGS, FAMILIES, STAGES, type BuildingType, type Family } from "./content.ts";
+import { BUILDINGS, FAMILIES, PACES, STAGES, type BuildingType, type Family, type Pace } from "./content.ts";
 import type { Building, Terrain, Tile } from "./protocol.ts";
 
 export function rng(seed: number): () => number {
@@ -23,8 +23,9 @@ export interface Generated {
 
 const dist = (ax: number, ay: number, bx: number, by: number): number => Math.hypot(ax - bx, ay - by);
 
-export function generateStage(seed: number, stageIndex: number): Generated {
+export function generateStage(seed: number, stageIndex: number, pace: Pace = "rapid"): Generated {
   const stage = STAGES[stageIndex];
+  const depth = PACES[pace].stockScale;
   const w = stage.size;
   const r = rng(seed * 31 + stageIndex * 7919 + 1);
   const tiles: Tile[] = Array.from({ length: w * w }, () => ({ t: 0, d: null, amt: 0, init: 0, life: 100, b: 0 }));
@@ -74,7 +75,7 @@ export function generateStage(seed: number, stageIndex: number): Generated {
         if (ok(x, y)) {
           const tile = at(x, y)!;
           tile.d = family;
-          tile.amt = tile.init = spec.perTile;
+          tile.amt = tile.init = spec.perTile * depth;
           if (terrain !== undefined) tile.t = terrain;
           placed++;
           inCluster++;
@@ -105,7 +106,7 @@ export function generateStage(seed: number, stageIndex: number): Generated {
       for (const i of order.slice(0, stage.families.matter.tiles)) {
         tiles[i].t = 3;
         tiles[i].d = "matter";
-        tiles[i].amt = tiles[i].init = stage.families.matter.perTile;
+        tiles[i].amt = tiles[i].init = stage.families.matter.perTile * depth;
       }
       spawn = { x: c, y: w - 4 };
       blobs("mineral", stage.families.mineral.tiles, 4, (x, y) => free(x, y) && dist(x, y, c, c) > 6);

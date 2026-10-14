@@ -27,6 +27,8 @@ const freeTile = (s: RoomState, size = 1): [number, number] => {
           for (let dx = 0; dx < size && ok; dx++) {
             const t = s.tiles[(y + dy) * s.w + x + dx];
             if (x + dx < 0 || y + dy < 0 || x + dx >= s.w || y + dy >= s.w || !t || t.d || t.b || t.t !== 0) ok = false;
+            // nobody may be standing on it: buildings never go up through a body
+            if (Object.values(s.players).some((q) => Math.round(q.x) === x + dx && Math.round(q.y) === y + dy)) ok = false;
           }
         if (ok) return [x, y];
       }
@@ -102,7 +104,7 @@ describe("resource accounting", () => {
         if (t && !t.d && !t.b && t.t === 0) spot = [gx + dx, gy + dy];
       }
     expect(spot).not.toBeNull();
-    stand(s, "a", spot![0], spot![1]);
+    stand(s, "a", spot![0] + 0.6, spot![1] + 0.6);
     expect(applyCommand(s, "a", id(), s.gen, { k: "build", x: spot![0], y: spot![1], type: "furnace" }, ch).ok).toBe(true);
     const [cx, cy] = freeTile(s, 2);
     expect(applyCommand(s, "a", id(), s.gen, { k: "build", x: cx, y: cy, type: "city" }, ch).ok).toBe(true);
@@ -255,7 +257,7 @@ describe("commands", () => {
     s.inventory = { matter: 100, mineral: 100, coolant: 100 };
     const i = s.tiles.findIndex((t) => t.d && t.t === 0);
     const [x, y] = at(s, i);
-    stand(s, "a", x, y);
+    stand(s, "a", x + 1, y);
     s.ledger[s.tiles[i].d!].extracted += s.tiles[i].amt;
     s.ledger[s.tiles[i].d!].remaining -= s.tiles[i].amt;
     s.tiles[i].amt = 0;

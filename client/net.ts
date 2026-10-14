@@ -2,7 +2,8 @@
 // (mutated in place, read by the renderer every frame) and a version counter
 // the HUD polls at a few hertz, so React never sees per-entity updates.
 import { PROTOCOL_VERSION, type ClientMsg, type Command, type Delta, type LogEntry, type ServerMsg, type Snapshot } from "../shared/protocol.ts";
-import { PLAYER_SPEED, TICK_MS } from "../shared/content.ts";
+import { TICK_MS } from "../shared/content.ts";
+import { step } from "../shared/sim.ts";
 
 export type Status = "connecting" | "live" | "reconnecting" | "error";
 
@@ -32,7 +33,7 @@ export class GameClient {
   /** interpolation buffers for every player, keyed by id */
   samples = new Map<string, Sample[]>();
   /** locally predicted position of our own avatar */
-  me = { x: 0, y: 0, dx: 0, dy: 0 };
+  me = { x: 0, y: 0, dx: 0, dy: 0, sprint: false };
   /** until when (performance.now) our own avatar swings, before the server confirms */
   swingUntil = 0;
   /** fired on every applied tile change: the renderer spawns effects from these */
@@ -74,6 +75,10 @@ export class GameClient {
     ws.onclose = (e) => {
       if (this.pingTimer) clearInterval(this.pingTimer);
       if (this.closed) return;
+      if (e.code === 4003) {
+        this.fail("The host removed you from this room.");
+        return;
+      }
       if (e.code === 4001) {
         this.fail("This world is open in another tab.");
         return;
@@ -145,7 +150,7 @@ export class GameClient {
           this.samples.clear();
         }
         const me = m.snap.players[m.you];
-        if (me && (fresh || Math.hypot(me.x - this.me.x, me.y - this.me.y) > 1)) this.me = { x: me.x, y: me.y, dx: 0, dy: 0 };
+        if (me && (fresh || Math.hypot(me.x - this.me.x, me.y - this.me.y) > 1)) this.me = { x: me.x, y: me.y, dx: 0, dy: 0, sprint: false };
         for (const p of Object.values(m.snap.players)) this.sample(p.id, p.x, p.y);
         this.status = "live";
         if (fresh) this.onBoundary?.();
@@ -164,7 +169,7 @@ export class GameClient {
         break;
       }
       case "error":
-        if (m.reason === "no such room" || m.reason === "this room is full" || m.reason.startsWith("this page is out of date")) this.fail(m.reason);
+        if (m.reason === "no such room" || m.reason === "this room is full" || m.reason.startsWith("the host removed") || m.reason.startsWith("this page is out of date")) this.fail(m.reason);
         else this.toast(m.reason, "bad");
         break;
       case "pong":
@@ -176,6 +181,7 @@ export class GameClient {
   private apply(d: Delta): void {
     const s = this.state;
     if (!s) return;
+    // each connection has its own stream sequence (its deltas carry its own private state)
     if (d.gen !== s.gen || d.seq !== this.seq + 1) {
       // a gap (or a stage we haven't got): ask for a fresh snapshot rather than guess
       if (d.seq > this.seq) this.raw({ t: "sync" });
@@ -208,6 +214,15 @@ export class GameClient {
     }
     if (d.removed) s.buildings = s.buildings.filter((b) => !d.removed!.includes(b.id));
     if (d.meta) Object.assign(s, d.meta);
+    if (d.me) s.me = d.me;
+    if (d.animals) s.animals = d.animals;
+    if (d.bags) s.bags = d.bags;
+    if (d.fauna) s.fauna = d.fauna;
+    if (d.town) s.town = d.town;
+    for (const [id, v] of d.chests ?? []) {
+      if (v) s.chests[id] = v;
+      else delete s.chests[id];
+    }
     if (d.log) {
       s.log = [...s.log, ...d.log].slice(-40) as LogEntry[];
     }
@@ -237,13 +252,11 @@ export class GameClient {
     return [buf[0].x, buf[0].y];
   }
 
-  /** Own movement is predicted locally (no collisions, so prediction is exact up to timing) and eased onto the server's answer. */
+  /** Own movement is predicted locally with the server's own step (same collisions) and eased onto the server's answer. */
   predict(dt: number): void {
     const s = this.state;
-    if (!s || s.phase.k === "ended") return;
-    const w = s.w - 1;
-    this.me.x = Math.max(0, Math.min(w, this.me.x + this.me.dx * PLAYER_SPEED * dt));
-    this.me.y = Math.max(0, Math.min(w, this.me.y + this.me.dy * PLAYER_SPEED * dt));
+    if (!s || s.phase.k === "ended" || (this.me.dx === 0 && this.me.dy === 0)) return;
+    [this.me.x, this.me.y] = step(s, this.me.x, this.me.y, this.me.dx, this.me.dy, dt, this.me.sprint);
   }
 
   private reconcile(x: number, y: number): void {

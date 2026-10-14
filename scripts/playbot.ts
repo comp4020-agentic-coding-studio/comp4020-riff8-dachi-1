@@ -1,12 +1,14 @@
 #!/usr/bin/env node
 // A playtest bot that joins a room over the real protocol and plays it: walks,
-// harvests by hand, and builds each stage's machine (homes, power, compute,
-// extractors) wherever the server will accept them. Used to drive a room
+// harvests by hand into its pack, gives what it gathers to the Cooperative
+// store, eats when hungry, makes itself an axe and a pick, and builds each
+// stage's machine (homes, power, compute, extractors) wherever the server will
+// accept them. Used to drive a room
 // through every stage while real browsers watch, and to measure pacing.
 //
 //   node scripts/playbot.ts <room> [baseUrl] [name]
 import WebSocket from "ws";
-import { BUILDINGS, HARVEST_RANGE, STAGES, type BuildingType } from "../shared/content.ts";
+import { BUILDINGS, FAMILIES, HARVEST_RANGE, RECIPES, STAGES, type BuildingType } from "../shared/content.ts";
 import { PROTOCOL_VERSION, type RoomState, type ServerMsg, type Snapshot } from "../shared/protocol.ts";
 import { placementProblem } from "../shared/sim.ts";
 
@@ -57,6 +59,7 @@ ws.on("message", (raw) => {
     }
     if (m.removed) s.buildings = s.buildings.filter((b) => !m.removed!.includes(b.id));
     if (m.meta) Object.assign(s, m.meta);
+    if (m.me) s.me = m.me;
   }
 });
 ws.on("close", () => process.exit(0));
@@ -68,7 +71,7 @@ function spotFor(type: BuildingType, me: { x: number; y: number }): [number, num
   let score = -Infinity;
   for (let y = 0; y < s.w; y++)
     for (let x = 0; x < s.w; x++) {
-      if (placementProblem(st, type, x, y) !== null) continue;
+      if (placementProblem(st, type, x, y, undefined, s.me?.items) !== null) continue;
       const d = Math.hypot(x - me.x, y - me.y);
       let v = -d;
       if (type === "extractor") {
@@ -103,6 +106,26 @@ setInterval(() => {
   if (!me) return;
   const st = STAGES[s.stage];
   const plan = PLANS[st.id];
+  const pv = s.me;
+  if (pv) {
+    // feed itself, keep two tools, and pass the rest of what it gathers on
+    if (pv.food < 60) {
+      if (pv.items.ration) return send({ k: "eat", item: "ration" });
+      if (pv.items.meal) return send({ k: "eat", item: "meal" });
+      if (pv.food < 25 && s.buildings.some((b) => b.type === "campfire" && Math.hypot(b.x - me.x, b.y - me.y) < 3)) return send({ k: "craft", recipe: "ration" });
+    }
+    for (const r of RECIPES.filter((q) => (q.id === "axe" || q.id === "pick") && !q.station))
+      if ("tool" in r.out && !pv.tools.some((t) => t.kind === (r.out as { tool: string }).tool) && Object.entries(r.in).every(([k, n]) => (pv.items[k as keyof typeof pv.items] ?? 0) >= (n ?? 0)))
+        return send({ k: "craft", recipe: r.id });
+    if (pv.food < 40 && !s.buildings.some((b) => b.type === "campfire" && b.owner === you) && (pv.items.matter ?? 0) >= 3 && (pv.items.mineral ?? 0) >= 2) {
+      const spot = spotFor("campfire", me);
+      if (spot && Math.hypot(spot[0] - me.x, spot[1] - me.y) <= 6) return send({ k: "build", x: spot[0], y: spot[1], type: "campfire" });
+    }
+    const keep = pv.food < 40 ? 4 : 0;
+    for (const f of FAMILIES) if ((pv.items[f] ?? 0) > keep + 2) return send({ k: "donate", item: f, n: (pv.items[f] ?? 0) - keep });
+    const tool = pv.tools.find((t) => t.kind === "axe" || t.kind === "pick");
+    if (tool && !s.players[you].holding) send({ k: "hold", tool: tool.id });
+  }
   const mine = s.buildings.filter((b) => b.owner);
   const counts = new Map<BuildingType, number>();
   let next: BuildingType | null = null;

@@ -35,6 +35,7 @@ class Bot {
         for (const [i, t] of m.tiles ?? []) this.snap.tiles[i] = t;
         for (const p of m.players) this.snap.players[p.id] = p;
         for (const [id, x, y] of m.moves ?? []) Object.assign(this.snap.players[id] ?? {}, { x, y });
+        if (m.me) this.snap.me = m.me;
       }
       for (const w of this.waiters.splice(0)) w();
     });
@@ -278,4 +279,67 @@ describe("persistence", () => {
     back.close();
     await stop(p, "SIGTERM");
   }, 45_000);
+});
+
+describe("two people, told apart", () => {
+  it("each harvest lands in its own player's pack, and nobody is sent anyone else's", async () => {
+    const room = await newRoom(baseUrl);
+    const a = await joined(baseUrl, room, "Ada");
+    const b = await joined(baseUrl, room, "Bo");
+    const [x, y] = await walkToDeposit(a);
+    a.cmd({ k: "harvest", x, y }, "pa1");
+    await a.until((m) => m.t === "delta" && !!m.me && Object.keys(m.me.items).length > 0);
+    // Bo heard about the tile, but never about Ada's pack
+    await b.until((m) => m.t === "delta" && !!m.tiles?.length);
+    const toBo = b.msgs.filter((m) => m.t === "delta" || m.t === "welcome");
+    for (const m of toBo) {
+      const text = JSON.stringify(m);
+      expect(text).not.toContain(a.token);
+      if (m.t === "delta" && m.me) expect(Object.keys(m.me.items)).toHaveLength(0);
+    }
+    expect(b.snap!.me!.items).toEqual({});
+    a.close();
+    b.close();
+  });
+});
+
+describe("the server's log says who did what", () => {
+  it("names each action's player by a public tag and name, never a token", async () => {
+    const dir = mkdtempSync(join(tmpdir(), "plenty-log-"));
+    const port = 19000 + Math.floor(Math.random() * 1000);
+    const url = `http://localhost:${port}`;
+    const p = spawn(process.execPath, ["server/main.ts"], { env: { ...process.env, PORT: String(port), DATA_DIR: dir }, stdio: ["ignore", "pipe", "inherit"] });
+    let out = "";
+    p.stdout!.on("data", (d: Buffer) => (out += d.toString()));
+    try {
+      for (let i = 0; i < 100; i++) {
+        try {
+          await fetch(new URL("/api/health", url));
+          break;
+        } catch {
+          await new Promise((r) => setTimeout(r, 100));
+        }
+      }
+      const room = await newRoom(url);
+      const a = await joined(url, room, "Ada");
+      const b = await joined(url, room, "Bo");
+      const [x, y] = await walkToDeposit(a);
+      a.cmd({ k: "harvest", x, y });
+      b.cmd({ k: "harvest", x: 0, y: 0 });
+      await new Promise((r) => setTimeout(r, 400));
+      const ta = a.snap!.players[a.you].tag;
+      const tb = b.snap!.players[b.you].tag;
+      expect(ta).not.toBe(tb);
+      expect(out).toMatch(new RegExp(`\\[${room}\\] ${ta} "Ada" joined`));
+      expect(out).toMatch(new RegExp(`\\[${room}\\] ${ta} "Ada" harvest ${x},${y} -> ok`));
+      expect(out).toMatch(new RegExp(`\\[${room}\\] ${tb} "Bo" harvest 0,0 -> refused`));
+      expect(out).not.toContain(a.token);
+      expect(out).not.toContain(b.token);
+      a.close();
+      b.close();
+    } finally {
+      p.kill("SIGKILL");
+      rmSync(dir, { recursive: true, force: true });
+    }
+  }, 20_000);
 });

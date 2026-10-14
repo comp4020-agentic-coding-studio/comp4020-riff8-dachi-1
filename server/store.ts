@@ -8,6 +8,8 @@ import { mkdirSync } from "node:fs";
 import { join } from "node:path";
 import type { RoomState } from "../shared/protocol.ts";
 import { SCHEMA_VERSION } from "../shared/protocol.ts";
+import { MAX_FOOD, MAX_HP, STAGES } from "../shared/content.ts";
+import { newTown, spawnFauna } from "../shared/sim.ts";
 
 const dir = process.env.DATA_DIR ?? join(process.cwd(), "data");
 mkdirSync(dir, { recursive: true });
@@ -48,11 +50,58 @@ export function saveRoom(s: RoomState): void {
   upsert.run(s.code, SCHEMA_VERSION, JSON.stringify(s), Date.now(), Object.keys(s.players).length);
 }
 
+/**
+ * Saved-state migrations, by the schema they upgrade from. Each takes the parsed
+ * row and returns the next schema's shape; rows are only rewritten by the next
+ * save, so a server that can't read a row never touches it.
+ */
+const STATE_MIGRATIONS: Record<number, (s: any) => any> = {
+  // 1 -> 2: personal packs, chests, wildlife, bags, the town. The old shared
+  // stockpile stays exactly where it was, as the Cooperative store: it moves
+  // once, into one place, not into a copy for every player. Players start with
+  // empty packs and full health; Earth gets its founding animals only if it
+  // hasn't been touched yet, since a used-up Earth has nowhere for them to live.
+  1: (s) => {
+    s.v = 2;
+    s.priv = {};
+    s.chests = {};
+    s.bags = [];
+    s.nextItemId = 1;
+    const fresh = STAGES[s.stage].id === "earth" && s.tiles.every((t: any) => t.amt === t.init);
+    s.animals = fresh ? spawnFauna(s.seed, s.tiles, s.w) : [];
+    s.fauna = { founded: s.animals.length, alive: s.animals.length, hunted: 0, starved: 0 };
+    s.town = newTown();
+    for (const p of Object.values<any>(s.players)) {
+      Object.assign(p, { hp: MAX_HP, holding: null, holdingId: 0, tag: p.id.slice(0, 6), nextHit: 0, deaths: 0 });
+      s.priv[p.id] = { items: {}, tools: [], food: MAX_FOOD };
+    }
+    // homes that existed hold their two residents from the start
+    s.town.residents = s.buildings.filter((b: any) => b.type === "city" && b.work >= 50).length * 2;
+    return s;
+  },
+};
+
+export function migrateState(schema: number, state: any): RoomState {
+  let v = schema;
+  while (v < SCHEMA_VERSION) {
+    const m = STATE_MIGRATIONS[v];
+    if (!m) throw new Error(`no migration from schema ${v}`);
+    state = m(state);
+    v++;
+  }
+  return state as RoomState;
+}
+
 export function loadRoom(code: string): RoomState | null {
   const row = select.get(code) as { schema: number; state: string } | undefined;
   if (!row) return null;
-  if (row.schema !== SCHEMA_VERSION) throw new Error(`room ${code} is schema ${row.schema}, server expects ${SCHEMA_VERSION}`);
-  return JSON.parse(row.state) as RoomState;
+  if (row.schema > SCHEMA_VERSION) throw new Error(`room ${code} is schema ${row.schema}, server expects ${SCHEMA_VERSION}`);
+  return migrateState(row.schema, JSON.parse(row.state));
+}
+
+/** A database-consistent copy, safe while the server runs in WAL mode (VACUUM INTO checkpoints a snapshot). */
+export function backupTo(path: string): void {
+  db.exec(`VACUUM INTO '${path.replace(/'/g, "''")}'`);
 }
 
 export const roomExists = (code: string): boolean => exists.get(code) !== undefined;
