@@ -110,3 +110,72 @@ kbd { background: var(--paper-2); border: 1px solid var(--line); border-radius: 
 .loading h1 { font-size: 1.2rem; font-weight: 500; }
 .bottleneck { margin-top: 0.3rem; border-top: 1px solid rgba(0, 0, 0, 0.12); padding-top: 0.25rem; }
 .ending .card.dawn { background: rgba(255, 248, 232, 0.95); max-height: 90vh; overflow: auto; }
+
+/* personal panels, atlas */
+.landing { display: flex; flex-direction: column; gap: 1rem; }
+.atlas { list-style: none; padding: 0; margin: 0.4rem 0; display: grid; grid-template-columns: repeat(auto-fit, minmax(10.5rem, 1fr)); gap: 0.5rem; }
+.atlas li { border-radius: 12px; padding: 0.35rem; border: 2px solid var(--line); }
+.atlas li.current { outline: 3px solid #1f5fbf; }
+.atlas li.spent { filter: grayscale(0.85); }
+.atlas-card { background: rgba(255, 250, 240, 0.9); border-radius: 8px; padding: 0.4rem 0.55rem; height: 100%; }
+.atlas-card h3 { margin: 0.1rem 0; font-size: 1rem; }
+.atlas-card p { margin: 0.2rem 0; }
+.atlas-wrap { max-width: 64rem; max-height: 90vh; overflow: auto; }
+.vitals { position: static; }
+.vitals p { margin: 0.15rem 0; display: flex; align-items: center; gap: 0.4rem; }
+.vlabel { width: 3.3rem; font-size: 0.8rem; }
+.vbar { flex: 1; height: 0.55rem; background: rgba(0, 0, 0, 0.12); border-radius: 99px; overflow: hidden; display: inline-block; }
+.vbar span { display: block; height: 100%; }
+.pack { max-width: 56rem; width: min(56rem, 94vw); max-height: 90vh; overflow: auto; }
+.pack-head { display: flex; justify-content: space-between; align-items: center; gap: 1rem; }
+.pack-head h2 { margin: 0; }
+.pack-cols { display: grid; grid-template-columns: 1fr 1.3fr; gap: 1rem; }
+@media (max-width: 700px) { .pack-cols { grid-template-columns: 1fr; } }
+.pack h3 { font-size: 0.95rem; margin: 0.6rem 0 0.3rem; }
+.items, .recipes { list-style: none; padding: 0; margin: 0; display: grid; gap: 0.3rem; }
+.items li, .recipes li { display: flex; justify-content: space-between; align-items: center; gap: 0.5rem; border-bottom: 1px solid rgba(0, 0, 0, 0.08); padding-bottom: 0.25rem; }
+.recipes li p { margin: 0.1rem 0; }
+.recipes li.cant { opacity: 0.8; }
+.recipes .why { color: var(--bad); }
+.row.tight { gap: 0.25rem; margin: 0.2rem 0; }
+.row.tight button { padding: 0.15rem 0.45rem; font-size: 0.78rem; }
+.nearby { right: 0.6rem; bottom: 5.5rem; width: min(19rem, 90vw); max-height: 45vh; overflow: auto; }
+.nearby h2 { font-size: 0.9rem; }
+.town .events { list-style: none; padding: 0; margin: 0.3rem 0 0; opacity: 0.85; }
+.town .on, .inspect .on { background: #ffe9a8; border-color: var(--ink); }
+.chat { position: absolute; left: 0.6rem; bottom: 6.5rem; width: 15rem; }
+.chat input { width: 100%; font-size: 0.8rem; }
+
+/* The 3D world's overlays: labels drawn by CSS2DRenderer (text only, set with
+   textContent), the crosshair, and the aim hint under it. */
+.world-labels { position: absolute; inset: 0; pointer-events: none; overflow: hidden; }
+.world-labels .wl { font: 600 12px/1.25 ui-rounded, "SF Pro Rounded", "Nunito", system-ui, sans-serif; color: #fffdf3; background: rgba(30, 24, 34, 0.68); border-radius: 7px; padding: 1px 7px; white-space: nowrap; }
+.wl-name { border-left: 4px solid var(--who, #fff); }
+.wl-place { background: rgba(255, 250, 240, 0.92) !important; color: var(--ink) !important; border: 1.5px solid var(--line); }
+.wl-ghost { background: transparent !important; color: rgba(220, 220, 235, 0.8) !important; font-style: italic; }
+.wl-building[data-kind="idle"] { background: rgba(255, 250, 240, 0.95) !important; color: var(--bad) !important; border: 1.5px solid var(--bad); }
+.wl-building[data-kind="site"] { background: rgba(255, 224, 138, 0.95) !important; color: var(--ink) !important; }
+.wl-emote { font-size: 22px !important; background: #fffdf3 !important; border: 2px solid var(--line); border-radius: 14px !important; padding: 0 6px !important; }
+.wl-pop { color: #fffbe0 !important; }
+.wl-survey { background: rgba(255, 251, 224, 0.92) !important; color: var(--ink) !important; font-variant-numeric: tabular-nums; }
+.crosshair { position: absolute; left: 50%; top: 50%; width: 22px; height: 22px; transform: translate(-50%, -50%); pointer-events: none; }
+.crosshair::before, .crosshair::after { content: ""; position: absolute; background: #fffdf3; box-shadow: 0 0 0 1.5px rgba(30, 24, 34, 0.75); border-radius: 1px; }
+.crosshair::before { left: 10px; top: 2px; width: 2px; height: 18px; }
+.crosshair::after { top: 10px; left: 2px; height: 2px; width: 18px; }
+.crosshair.build::before, .crosshair.build::after { background: #bfffc8; }
+.crosshair.demolish::before, .crosshair.demolish::after { background: #ff8a7a; }
+.aim-hint { position: absolute; left: 0; top: 0; pointer-events: none; font-size: 0.85rem; font-weight: 600; color: #fffdf3; background: rgba(30, 24, 34, 0.72); border-radius: 8px; padding: 0.15rem 0.6rem; white-space: nowrap; }
+.aim-hint[data-bad="1"] { color: #ffd1cc; }
+.aim-hint[hidden] { display: none; }
+.lock-hint { position: absolute; left: 50%; top: calc(50% + 4.2rem); transform: translateX(-50%); margin: 0; pointer-events: none; font-size: 0.8rem; color: #fffdf3; background: rgba(30, 24, 34, 0.55); border-radius: 8px; padding: 0.15rem 0.6rem; }
+.world-flash { position: absolute; inset: 0; background: #fff; opacity: 0; pointer-events: none; }
+.settings select { font: inherit; border: 2px solid var(--line); border-radius: 8px; background: #fff; color: var(--ink); }
+.settings label { justify-content: space-between; }
+@media (max-width: 900px) { .lock-hint { display: none; } }
+.settings { max-height: calc(100vh - 2rem); overflow: auto; top: auto; bottom: 1rem; }
+.world-labels { z-index: 1; } .aim-hint, .crosshair, .lock-hint { z-index: 2; } .panel, .col-left, .corner-buttons, .overlay, .toasts { z-index: 3; }
+.crosshair, .aim-hint { z-index: 4; }
+@media (max-width: 900px) { .corner-buttons { top: 13rem; bottom: auto; } .corner-buttons .emotes { flex-wrap: wrap; justify-content: flex-end; max-width: 7.5rem; } }
+.log p.said { font-weight: 600; }
+.log .mute { font-size: 0.66rem; padding: 0 0.3rem; margin-left: 0.3rem; box-shadow: none; }
+.col-left .town { position: static; }

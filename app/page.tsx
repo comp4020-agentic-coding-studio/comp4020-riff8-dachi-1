@@ -1,5 +1,6 @@
 "use client";
 import { useEffect, useState, type FormEvent } from "react";
+import { Atlas } from "../client/Atlas.tsx";
 
 export default function Home() {
   const [name, setName] = useState("");
@@ -42,8 +43,8 @@ export default function Home() {
       <div className="card hero">
         <h1>Plenty</h1>
         <p className="lede">
-          Arrive on a little island with your friends. Gather, build homes, power them, teach a datacentre to do the gathering for you. Grow. When
-          the island is used up, the Plenty Cooperative has another world ready. It has five.
+          Arrive on a little island with your friends. Make an axe, cook over a fire, keep a chest of your own. Build cottages, power them, teach a
+          datacentre to do the gathering for you. Grow. When the island is used up, the Plenty Cooperative has another world ready. It has five.
         </p>
         <label>
           Your name <input value={name} maxLength={16} onChange={(e) => setName(e.target.value)} placeholder="Guest" />
@@ -64,9 +65,13 @@ export default function Home() {
         </form>
         {error && <p role="alert" className="bad">{error}</p>}
         <p className="small">
-          2–8 players, no account, desktop browser with a keyboard. <a href="/readme/">About the game and how it works</a>
+          2–8 players, no account, desktop browser with a keyboard and mouse. <a href="/readme/">About the game and how it works</a>
         </p>
       </div>
+      <section className="card atlas-wrap" aria-labelledby="atlas-front">
+        <h2 id="atlas-front">The five worlds</h2>
+        <Atlas />
+      </section>
     </main>
   );
 }

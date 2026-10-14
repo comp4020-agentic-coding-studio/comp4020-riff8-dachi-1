@@ -1,22 +1,28 @@
 "use client";
-// The play screen: the canvas (driven by Renderer's own frame loop) plus a
+// The play screen: the 3D world (driven by Renderer3D's own frame loop) plus a
 // compact React HUD that re-renders at most five times a second from the
-// client's version counter, never per entity update.
+// client's version counter, never per entity update. Movement is relative to
+// the camera: Renderer3D.moveBasis() turns WASD into a tile-space direction.
 import { useEffect, useRef, useState, type ReactNode } from "react";
-import { BUILDINGS, EMOTES, FAMILIES, HARVEST_RANGE, STAGES, buildingName, type BuildingType, type Emote } from "../shared/content.ts";
+import { BUILDINGS, EMOTES, FAMILIES, HARVEST_RANGE, STAGES, TOOLS, buildingName, type BuildingType, type Emote } from "../shared/content.ts";
 import type { Building, Snapshot } from "../shared/protocol.ts";
 import { averageLife } from "../shared/sim.ts";
 import { GameClient } from "./net.ts";
-import { PLAYER_COLOURS, Renderer, type Tool, type View } from "./render.ts";
+import { Renderer3D } from "./render3d.ts";
+import { CAMERA_LABEL, CAMERA_MODES, PLAYER_COLOURS, initialView, saveSettings, type CameraMode, type Tool, type View } from "./view.ts";
+import { DcControls, Nearby, PackPanel, TownPanel, Vitals, interact } from "./Panels.tsx";
+import { Atlas } from "./Atlas.tsx";
 import { Sound, type Mix } from "./audio.ts";
 
 const EMOTE_GLYPH: Record<Emote, string> = { wave: "👋", heart: "💛", laugh: "😄", wow: "😮", sad: "😢", point: "👉" };
+/** [forward, right] per movement key */
 const KEY_DIRS: Record<string, [number, number]> = {
-  w: [-1, -1], arrowup: [-1, -1],
-  s: [1, 1], arrowdown: [1, 1],
-  a: [-1, 1], arrowleft: [-1, 1],
-  d: [1, -1], arrowright: [1, -1],
+  w: [1, 0], arrowup: [1, 0],
+  s: [-1, 0], arrowdown: [-1, 0],
+  a: [0, -1], arrowleft: [0, -1],
+  d: [0, 1], arrowright: [0, 1],
 };
+
 
 const MECHANIC_HINT: Record<string, string> = {
   pollution: "Furnaces are strong but their smoke kills groves and browns the land. Sun Gardens are clean and slow.",
@@ -42,19 +48,26 @@ function useVersion(client: GameClient | null): number {
   return client?.version ?? 0;
 }
 
-const prefersReducedMotion = (): boolean => typeof window !== "undefined" && window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+const releasePointer = (): void => {
+  if (typeof document !== "undefined" && document.pointerLockElement) document.exitPointerLock();
+};
 
 export default function Game({ room, name }: { room: string; name: string }): ReactNode {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const [client, setClient] = useState<GameClient | null>(null);
-  const rendererRef = useRef<Renderer | null>(null);
+  const rendererRef = useRef<Renderer3D | null>(null);
   const soundRef = useRef(new Sound());
-  const viewRef = useRef<View>({ tool: "harvest", build: null, hover: null, keyboardTarget: true, survey: false, selected: null, reducedMotion: prefersReducedMotion(), low: false, zoom: 1 });
+  const viewRef = useRef<View>(initialView());
   const [, force] = useState(0);
   const [help, setHelp] = useState(false);
   const [naming, setNaming] = useState<[number, number] | null>(null);
   const [mix, setMix] = useState<Mix>({ music: 0.5, ambience: 0.7, effects: 0.8 });
   const [settings, setSettings] = useState(false);
+  const [pack, setPack] = useState(false);
+  const [atlas, setAtlas] = useState(false);
+  const [chatting, setChatting] = useState(false);
+  const [muted, setMuted] = useState<Set<string>>(new Set());
+  const [locked, setLocked] = useState(false);
   useVersion(client);
   const view = viewRef.current;
   const rerender = (): void => force((n) => n + 1);
@@ -62,7 +75,7 @@ export default function Game({ room, name }: { room: string; name: string }): Re
   useEffect(() => {
     const c = new GameClient(room, name);
     const canvas = canvasRef.current!;
-    const r = new Renderer(canvas, c, viewRef.current);
+    const r = new Renderer3D(canvas, c, viewRef.current);
     rendererRef.current = r;
     c.onAck = (ok, cmd) => {
       const snd = soundRef.current;
@@ -78,61 +91,97 @@ export default function Game({ room, name }: { room: string; name: string }): Re
       viewRef.current.build = null;
       viewRef.current.selected = null;
     };
+    const onLock = (): void => setLocked(document.pointerLockElement === canvas);
+    document.addEventListener("pointerlockchange", onLock);
     c.connect();
     r.start();
     setClient(c);
     return () => {
+      document.removeEventListener("pointerlockchange", onLock);
+      releasePointer();
       r.stop();
       c.close();
       soundRef.current.stop();
+      rendererRef.current = null;
     };
   }, [room, name]);
 
-  // keep the sound engine fed with the world's state
+  // keep the sound engine fed with the world's state, and the hand model with what's held
   const s = client?.state ?? null;
   useEffect(() => {
-    if (!s) return;
+    if (!s || !client) return;
     const snd = soundRef.current;
     snd.life = averageLife(s);
     snd.machines = s.buildings.filter((b) => b.status === "ok" && b.owner).length;
     snd.stage = s.stage;
     snd.ended = s.phase.k === "ended" && s.phase.how !== "restraint";
+    view.held = s.players[client.you]?.holding ?? null;
   });
   useEffect(() => soundRef.current.setMix(mix), [mix]);
+
+  // a dialog or menu takes the mouse back; getting it again takes a deliberate click
+  useEffect(() => {
+    if (help || naming || settings || pack || atlas || chatting) releasePointer();
+  }, [help, naming, settings, pack, atlas, chatting]);
 
   // keyboard
   useEffect(() => {
     if (!client) return;
     const held = new Set<string>();
+    let sprint = false;
     let harvestTimer: ReturnType<typeof setInterval> | null = null;
-    const sendMove = (): void => {
-      let dx = 0;
-      let dy = 0;
+    let basisSeen = -1;
+    const sendMove = (force = false): void => {
+      let f = 0;
+      let r = 0;
       for (const k of held) {
         const d = KEY_DIRS[k];
         if (d) {
-          dx += d[0];
-          dy += d[1];
+          f += d[0];
+          r += d[1];
         }
       }
-      const len = Math.hypot(dx, dy);
-      if (len > 0) {
+      let dx = 0;
+      let dy = 0;
+      const rend = rendererRef.current;
+      if ((f || r) && rend) {
+        const b = rend.moveBasis();
+        dx = b.fx * f + b.rx * r;
+        dy = b.fy * f + b.ry * r;
+        const len = Math.hypot(dx, dy);
         dx /= len;
         dy /= len;
+        basisSeen = rend.basisVersion;
       }
-      if (dx !== client.me.dx || dy !== client.me.dy) {
+      // a few decimals is plenty, and keeps tiny jitters from re-sending
+      dx = Math.round(dx * 1000) / 1000;
+      dy = Math.round(dy * 1000) / 1000;
+      const sp = sprint && (dx !== 0 || dy !== 0);
+      if (force || dx !== client.me.dx || dy !== client.me.dy || sp !== client.me.sprint) {
         client.me.dx = dx;
         client.me.dy = dy;
-        client.send({ k: "move", dx, dy });
+        client.me.sprint = sp;
+        client.send({ k: "move", dx, dy, sprint: sp || undefined });
       }
     };
+    // turning the camera while walking changes which way "forward" is
+    const steer = setInterval(() => {
+      const rend = rendererRef.current;
+      if (rend && held.size && rend.basisVersion !== basisSeen) sendMove();
+    }, 100);
     const down = (e: KeyboardEvent): void => {
       if (e.ctrlKey || e.metaKey || e.altKey) return;
       const el = e.target instanceof Element ? e.target : null;
-      if (el?.closest("input, textarea, select, dialog")) return;
+      if (el?.closest("input, textarea, select, dialog, [role=dialog]")) return;
       if (el?.closest("button, a") && (e.key === "Enter" || e.key === " ")) return;
       const k = e.key.toLowerCase();
       const st = client.state ? STAGES[client.state.stage] : null;
+      const rend = rendererRef.current;
+      if (e.key === "Shift") {
+        sprint = true;
+        sendMove();
+        return;
+      }
       if (KEY_DIRS[k]) {
         e.preventDefault();
         held.add(k);
@@ -140,8 +189,18 @@ export default function Game({ room, name }: { room: string; name: string }): Re
         sendMove();
         return;
       }
+      if (e.key === "Tab") {
+        e.preventDefault();
+        if (!e.repeat) setPack((p) => !p);
+        return;
+      }
+      if (k === " ") {
+        e.preventDefault();
+        rend?.jump();
+        return;
+      }
       if (e.repeat) return;
-      if (k === "e" || k === " ") {
+      if (k === "e") {
         e.preventDefault();
         quickHarvest();
         if (!harvestTimer) harvestTimer = setInterval(quickHarvest, 820);
@@ -157,12 +216,19 @@ export default function Game({ room, name }: { room: string; name: string }): Re
       } else if (k === "escape") {
         setTool("harvest");
         setHelp(false);
+        setPack(false);
+        setAtlas(false);
       } else if (k === "enter") {
         e.preventDefault();
-        viewRef.current.keyboardTarget = true;
-        const tgt = rendererRef.current?.facingTile();
-        if (tgt) act(tgt[0], tgt[1]);
-      } else if (k === "x") setTool("demolish");
+        if (view.mode === "iso") viewRef.current.keyboardTarget = true;
+        const tgt = rend?.target();
+        if (tgt) act(tgt[0], tgt[1], rend?.aim().building ?? null, rend?.aim().animal ?? null);
+      } else if (k === "c") cycleMode();
+      else if ((k === "q" || k === "r") && view.mode === "iso") rend?.rotateIso(k === "q" ? -1 : 1);
+      else if (k === "f") {
+        if (client.state && !interact(client.state, client)) client.toast("Nothing close enough to use.", "bad");
+      } else if (k === "g") cycleTool();
+      else if (k === "x") setTool("demolish");
       else if (k === "i") setTool("inspect");
       else if (k === "n") setTool("mark");
       else if (k === "v") {
@@ -170,20 +236,31 @@ export default function Game({ room, name }: { room: string; name: string }): Re
         rerender();
       } else if (k === "p") photo();
       else if (k === "h" || k === "?") setHelp((h) => !h);
+      else if (k === "m") setAtlas((a) => !a);
+      else if (k === "t") {
+        e.preventDefault();
+        setChatting(true);
+      }
       else if (k === "=" || k === "+") zoomBy(1.15);
       else if (k === "-") zoomBy(1 / 1.15);
     };
     const up = (e: KeyboardEvent): void => {
       const k = e.key.toLowerCase();
+      if (e.key === "Shift") {
+        sprint = false;
+        sendMove();
+      }
       if (held.delete(k)) sendMove();
-      if ((k === "e" || k === " ") && harvestTimer) {
+      if (k === "e" && harvestTimer) {
         clearInterval(harvestTimer);
         harvestTimer = null;
       }
     };
     const blur = (): void => {
       held.clear();
+      sprint = false;
       sendMove();
+      releasePointer();
       if (harvestTimer) clearInterval(harvestTimer);
       harvestTimer = null;
     };
@@ -194,6 +271,7 @@ export default function Game({ room, name }: { room: string; name: string }): Re
       window.removeEventListener("keydown", down);
       window.removeEventListener("keyup", up);
       window.removeEventListener("blur", blur);
+      clearInterval(steer);
       if (harvestTimer) clearInterval(harvestTimer);
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -217,34 +295,78 @@ export default function Game({ room, name }: { room: string; name: string }): Re
     view.zoom = Math.max(0.5, Math.min(2.2, view.zoom * k));
   }
 
-  /** Harvest (or help build) the best thing in reach: the forgiving keyboard path. */
+  function setMode(m: CameraMode): void {
+    rendererRef.current?.setMode(m);
+    view.mode = m;
+    if (m === "iso") releasePointer();
+    saveSettings(view);
+    rerender();
+  }
+
+  function cycleMode(): void {
+    setMode(CAMERA_MODES[(CAMERA_MODES.indexOf(view.mode) + 1) % CAMERA_MODES.length]);
+  }
+
+  function updateSettings(patch: Partial<View>): void {
+    Object.assign(view, patch);
+    saveSettings(view);
+    rerender();
+  }
+
+  /** G: the next tool in your pack you can hold, then bare hands. */
+  function cycleTool(): void {
+    const c = client;
+    const st = c?.state;
+    if (!c || !st) return;
+    const tools = (st.me?.tools ?? []).filter((t) => !TOOLS[t.kind]?.armour);
+    if (!tools.length) return c.toast("No tools yet: make one in your pack (Tab).", "bad");
+    const current = st.players[c.you]?.holdingId ?? 0;
+    const at = tools.findIndex((t) => t.id === current);
+    const next = at === -1 ? tools[0] : tools[at + 1];
+    c.send({ k: "hold", tool: next ? next.id : 0 });
+  }
+
+  const useful = (st: Snapshot, x: number, y: number): boolean => {
+    if (x < 0 || y < 0 || x >= st.w || y >= st.w) return false;
+    const t = st.tiles[y * st.w + x];
+    const site = t.b ? st.buildings.find((b) => b.id === t.b) : undefined;
+    return !!((t.d && t.amt > 0) || (site && site.work < BUILDINGS[site.type].build * 10));
+  };
+
+  /** Harvest (or help build) the best thing in reach: the forgiving keyboard path. In first and third person, what you aim at wins if it's in reach. */
   function quickHarvest(): void {
     const c = client;
     const st = c?.state;
     if (!c || !st) return;
     let best: [number, number] | null = null;
+    const aimed = view.mode !== "iso" ? rendererRef.current?.aim().tile : null;
+    if (aimed && useful(st, aimed[0], aimed[1]) && Math.hypot(aimed[0] - c.me.x, aimed[1] - c.me.y) <= HARVEST_RANGE - 0.1) best = aimed;
     let bd = Infinity;
     const r = Math.ceil(HARVEST_RANGE);
-    for (let y = Math.floor(c.me.y) - r; y <= Math.ceil(c.me.y) + r; y++)
-      for (let x = Math.floor(c.me.x) - r; x <= Math.ceil(c.me.x) + r; x++) {
-        if (x < 0 || y < 0 || x >= st.w || y >= st.w) continue;
-        const t = st.tiles[y * st.w + x];
-        const site = t.b ? st.buildings.find((b) => b.id === t.b) : undefined;
-        const useful = (t.d && t.amt > 0) || (site && site.work < BUILDINGS[site.type].build * 10);
-        const d = Math.hypot(x - c.me.x, y - c.me.y);
-        if (useful && d <= HARVEST_RANGE - 0.1 && d < bd) [bd, best] = [d, [x, y]];
-      }
+    if (!best)
+      for (let y = Math.floor(c.me.y) - r; y <= Math.ceil(c.me.y) + r; y++)
+        for (let x = Math.floor(c.me.x) - r; x <= Math.ceil(c.me.x) + r; x++) {
+          const d = Math.hypot(x - c.me.x, y - c.me.y);
+          if (useful(st, x, y) && d <= HARVEST_RANGE - 0.1 && d < bd) [bd, best] = [d, [x, y]];
+        }
     if (best) {
       c.send({ k: "harvest", x: best[0], y: best[1] });
       soundRef.current.tap();
-    }
-    else c.toast("Nothing in reach to harvest. Press V to survey.", "bad");
+    } else c.toast("Nothing in reach to harvest. Press V to survey.", "bad");
   }
 
-  function act(x: number, y: number): void {
+  /** The one action path for every camera: the server decides reach and validity. */
+  function act(x: number, y: number, building: Building | null = null, animal: NonNullable<Snapshot["animals"]>[number] | null = null): void {
     const c = client;
     const st = c?.state;
-    if (!c || !st || x < 0 || y < 0 || x >= st.w || y >= st.w) return;
+    if (!c || !st) return;
+    if (animal && (view.tool === "harvest" || view.tool === "inspect")) {
+      c.send(animal.dead ? { k: "butcher", animal: animal.id } : { k: "hit", animal: animal.id });
+      soundRef.current.tap();
+      return;
+    }
+    if (building && view.tool !== "build" && view.tool !== "mark") [x, y] = [building.x, building.y];
+    if (x < 0 || y < 0 || x >= st.w || y >= st.w) return;
     const t = st.tiles[y * st.w + x];
     switch (view.tool) {
       case "build":
@@ -286,24 +408,61 @@ export default function Game({ room, name }: { room: string; name: string }): Re
   }
 
   const onPointer = (e: React.PointerEvent<HTMLCanvasElement>): void => {
+    if (view.mode !== "iso") return;
     const rect = e.currentTarget.getBoundingClientRect();
     view.hover = rendererRef.current?.pick(e.clientX - rect.left, e.clientY - rect.top) ?? null;
     view.keyboardTarget = false;
   };
   const onClick = (e: React.PointerEvent<HTMLCanvasElement>): void => {
     if (e.button !== 0) return;
-    onPointer(e);
-    // a tall building is picked by what you see of it, not only its footprint
-    if (view.tool === "harvest" || view.tool === "inspect" || view.tool === "demolish") {
-      const rect = e.currentTarget.getBoundingClientRect();
-      const b = rendererRef.current?.pickBuilding(e.clientX - rect.left, e.clientY - rect.top);
-      if (b) return act(b.x, b.y);
+    const rend = rendererRef.current;
+    if (!rend) return;
+    const canvas = e.currentTarget;
+    if (view.mode !== "iso") {
+      // first and third person aim with the crosshair; with a mouse, the first click only takes the pointer
+      if (e.pointerType === "mouse" && document.pointerLockElement !== canvas) {
+        const p = canvas.requestPointerLock() as unknown as Promise<void> | undefined;
+        p?.catch?.(() => undefined);
+        return;
+      }
+      if (e.pointerType === "touch") return;
+      const a = rend.aim();
+      if (a.tile) act(a.tile[0], a.tile[1], a.building, a.animal);
+      return;
     }
+    onPointer(e);
+    const rect = canvas.getBoundingClientRect();
+    const sx = e.clientX - rect.left;
+    const sy = e.clientY - rect.top;
+    const animal = rend.pickAnimal(sx, sy);
+    // a tall building is picked by what you see of it, not only its footprint
+    const b = view.tool === "harvest" || view.tool === "inspect" || view.tool === "demolish" ? rend.pickBuilding(sx, sy) : null;
+    if (animal) return act(Math.round(animal.x), Math.round(animal.y), null, animal);
+    if (b) return act(b.x, b.y, b);
     if (view.hover) act(view.hover[0], view.hover[1]);
+  };
+  // a tap (not a drag) on a touch screen acts where it lands, in every camera
+  const tapRef = useRef<{ x: number; y: number; t: number } | null>(null);
+  const onPointerUp = (e: React.PointerEvent<HTMLCanvasElement>): void => {
+    if (e.pointerType !== "touch" || view.mode === "iso") return;
+    const t0 = tapRef.current;
+    tapRef.current = null;
+    if (!t0 || Math.hypot(e.clientX - t0.x, e.clientY - t0.y) > 10 || performance.now() - t0.t > 400) return;
+    const rend = rendererRef.current;
+    if (!rend) return;
+    const rect = e.currentTarget.getBoundingClientRect();
+    const sx = e.clientX - rect.left;
+    const sy = e.clientY - rect.top;
+    const animal = rend.pickAnimal(sx, sy);
+    const b = rend.pickBuilding(sx, sy);
+    const tile = rend.pick(sx, sy);
+    if (animal) act(Math.round(animal.x), Math.round(animal.y), null, animal);
+    else if (tile) act(tile[0], tile[1], b);
   };
 
   const st = s ? STAGES[s.stage] : null;
   const host = !!(s && client && s.hostId === client.you);
+  const firstPerson = view.mode !== "iso";
 
   return (
     <main className="game">
@@ -312,15 +471,30 @@ export default function Game({ room, name }: { room: string; name: string }): Re
         ref={canvasRef}
         className="world"
         tabIndex={0}
-        aria-label={st ? `${st.name}: the shared world. Move with WASD or arrows, harvest with E.` : "Loading the world"}
+        aria-label={st ? `${st.name}: the shared world, ${CAMERA_LABEL[view.mode].toLowerCase()} view. Move with WASD or arrows, harvest with E, C changes the camera.` : "Loading the world"}
         onPointerMove={onPointer}
-        onPointerDown={onClick}
+        onPointerDown={(e) => {
+          if (e.pointerType === "touch") tapRef.current = { x: e.clientX, y: e.clientY, t: performance.now() };
+          onClick(e);
+        }}
+        onPointerUp={onPointerUp}
         onContextMenu={(e) => {
           e.preventDefault();
           setTool("harvest");
         }}
+        onMouseDown={(e) => {
+          if (e.button === 2) setTool("harvest");
+        }}
         onWheel={(e) => zoomBy(e.deltaY < 0 ? 1.1 : 1 / 1.1)}
       />
+      {firstPerson && s && (
+        <div className={`crosshair ${view.tool}`} aria-hidden="true">
+          <span />
+        </div>
+      )}
+      {firstPerson && s && !locked && !help && !naming && !settings && !pack && !atlas && !chatting && s.phase.k === "play" && (
+        <p className="lock-hint" aria-hidden="true">Click the world to look around · C changes camera</p>
+      )}
       {!s || !client || !st ? (
         <div className="overlay center">
           <div className="card">
@@ -333,14 +507,20 @@ export default function Game({ room, name }: { room: string; name: string }): Re
         <>
           <div className="col-left">
             <StagePanel s={s} />
+            <Vitals s={s} client={client} />
             <Economy s={s} />
+            <TownPanel s={s} host={host} client={client} />
             {st.id === "earth" && s.phase.k === "play" && <Memo s={s} />}
           {st.id === "universe" && s.phase.k === "play" && <LastFrontier s={s} you={client.you} onVote={(on) => client.send({ k: "stop", on })} />}
           </div>
           <RoomPanel s={s} client={client} host={host} />
           <BuildBar s={s} view={view} onPick={chooseBuild} onTool={setTool} />
-          <Log s={s} client={client} />
-          {view.selected !== null && <Inspect s={s} b={s.buildings.find((b) => b.id === view.selected)} youId={client.you} host={host} onDemolish={(b) => client.send({ k: "demolish", x: b.x, y: b.y })} onClose={() => setTool("harvest")} />}
+          <Log s={s} client={client} muted={muted} onMute={(id) => setMuted((m) => new Set(m).add(id))} />
+          {chatting && <ChatBox onSend={(text) => client.send({ k: "say", text })} onClose={() => setChatting(false)} />}
+          {view.selected === null && <Nearby s={s} client={client} />}
+          {view.selected !== null && <Inspect s={s} client={client} b={s.buildings.find((b) => b.id === view.selected)} youId={client.you} host={host} onDemolish={(b) => client.send({ k: "demolish", x: b.x, y: b.y })} onClose={() => setTool("harvest")} />}
+          {pack && <PackPanel s={s} client={client} onClose={() => setPack(false)} />}
+          {atlas && <Atlas s={s} onClose={() => setAtlas(false)} />}
           <div className="corner-buttons">
             <div className="emotes" role="group" aria-label="Emotes">
               {EMOTES.map((e, i) => (
@@ -349,17 +529,45 @@ export default function Game({ room, name }: { room: string; name: string }): Re
                 </button>
               ))}
             </div>
+            <button type="button" onClick={cycleMode} title="Change camera (C)">
+              {CAMERA_LABEL[view.mode]} (C)
+            </button>
             <button type="button" onClick={() => { view.survey = !view.survey; rerender(); }} aria-pressed={view.survey}>
               Survey (V)
             </button>
             <button type="button" onClick={photo}>Photo (P)</button>
             <button type="button" onClick={() => { if (!soundRef.current.running) soundRef.current.start(mix); setSettings((v) => !v); }} aria-expanded={settings}>
-              {soundRef.current.running ? "Sound" : "Sound on"}
+              Settings
             </button>
+            <button type="button" onClick={() => setPack(true)}>Pack (Tab)</button>
+            <button type="button" onClick={() => setAtlas(true)}>Atlas (M)</button>
+            <button type="button" onClick={() => setChatting(true)}>Talk (T)</button>
             <button type="button" onClick={() => setHelp(true)}>Help (H)</button>
           </div>
           {settings && (
             <div className="panel settings" role="group" aria-label="Settings">
+              <label>
+                camera
+                <select value={view.mode} onChange={(e) => setMode(e.target.value as CameraMode)}>
+                  {CAMERA_MODES.map((m) => (
+                    <option key={m} value={m}>{CAMERA_LABEL[m]}</option>
+                  ))}
+                </select>
+              </label>
+              <label>
+                field of view {view.fov}°
+                <input type="range" min={60} max={100} step={1} value={view.fov} onChange={(e) => updateSettings({ fov: Number(e.target.value) })} />
+              </label>
+              <label>
+                mouse sensitivity {view.sensitivity.toFixed(1)}
+                <input type="range" min={0.2} max={3} step={0.1} value={view.sensitivity} onChange={(e) => updateSettings({ sensitivity: Number(e.target.value) })} />
+              </label>
+              <label>
+                <input type="checkbox" checked={view.invertY} onChange={(e) => updateSettings({ invertY: e.target.checked })} /> invert mouse Y
+              </label>
+              <label>
+                <input type="checkbox" checked={view.bob} onChange={(e) => updateSettings({ bob: e.target.checked })} /> camera bob
+              </label>
               {(Object.keys(mix) as (keyof Mix)[]).map((k) => (
                 <label key={k}>
                   {k}
@@ -367,13 +575,13 @@ export default function Game({ room, name }: { room: string; name: string }): Re
                 </label>
               ))}
               <label>
-                <input type="checkbox" checked={view.reducedMotion} onChange={(e) => { view.reducedMotion = e.target.checked; rerender(); }} /> reduced motion
+                <input type="checkbox" checked={view.reducedMotion} onChange={(e) => updateSettings({ reducedMotion: e.target.checked })} /> reduced motion
               </label>
               <label>
-                <input type="checkbox" checked={view.low} onChange={(e) => { view.low = e.target.checked; rerender(); }} /> low detail
+                <input type="checkbox" checked={view.low} onChange={(e) => updateSettings({ low: e.target.checked })} /> low detail
               </label>
               <p className="small">
-                {Math.round(1000 / Math.max(1, 16.7))} fps target · frame {rendererRef.current?.frameMs.toFixed(1)} ms · ping {client.rtt} ms
+                frame {rendererRef.current?.frameMs.toFixed(1)} ms · ping {client.rtt} ms
               </p>
             </div>
           )}
@@ -499,7 +707,7 @@ function Economy({ s }: { s: Snapshot }): ReactNode {
   const bottleneck = top ? { n: idle.length, why: top[0] } : null;
   return (
     <div className="panel left">
-      <h2>Stockpile (shared)</h2>
+      <h2>Cooperative store (shared)</h2>
       <ul className="inv">
         {FAMILIES.map((f) => (
           <li key={f}>
@@ -531,7 +739,10 @@ function Economy({ s }: { s: Snapshot }): ReactNode {
 function Memo({ s }: { s: Snapshot }): ReactNode {
   const has = (t: BuildingType): boolean => s.buildings.some((b) => b.type === t && b.owner);
   const steps: [string, boolean][] = [
-    ["Gather timber and stone (E near a tree or rock)", s.ledger.matter.extracted + s.ledger.mineral.extracted >= 20],
+    ["Gather timber and stone (hold E near a tree or rock)", s.ledger.matter.extracted + s.ledger.mineral.extracted >= 20],
+    ["Make a stone axe or pick (Tab), then hold it (G)", !!s.me?.tools.length],
+    ["Put down a Campfire and a Chest of your own", has("campfire") && has("chest")],
+    ["Give stock to the Cooperative store (Tab)", FAMILIES.some((f) => s.inventory[f] > 0) || has("city")],
     ["Build Cottages for workers", has("city")],
     ["Power them: a Furnace or a Sun Garden", has("furnace") || has("solar")],
     ["Build a Datacentre (it drinks pond water)", has("datacentre")],
@@ -616,18 +827,44 @@ function BuildBar({ s, view, onPick, onTool }: { s: Snapshot; view: View; onPick
   );
 }
 
-function Log({ s, client }: { s: Snapshot; client: GameClient }): ReactNode {
-  void client;
+function Log({ s, client, muted, onMute }: { s: Snapshot; client: GameClient; muted: Set<string>; onMute: (id: string) => void }): ReactNode {
+  const lines = s.log.filter((l) => !l.by || !muted.has(l.by)).slice(-5);
   return (
-    <div className="panel log" aria-live="polite" aria-label="Activity">
-      {s.log.slice(-4).map((l, i) => (
-        <p key={`${l.tick}-${i}`}>{l.text}</p>
+    <div className="panel log" aria-live="polite" aria-label="Activity and talk">
+      {lines.map((l, i) => (
+        <p key={`${l.tick}-${i}`} className={l.by ? "said" : ""}>
+          {l.text}
+          {l.by && l.by !== client.you && (
+            <button type="button" className="mute" onClick={() => onMute(l.by!)} aria-label={`Mute ${s.players[l.by]?.name ?? "them"}`} title="Mute">
+              mute
+            </button>
+          )}
+        </p>
       ))}
     </div>
   );
 }
 
-function Inspect({ s, b, youId, host, onDemolish, onClose }: { s: Snapshot; b: Building | undefined; youId: string; host: boolean; onDemolish: (b: Building) => void; onClose: () => void }): ReactNode {
+function ChatBox({ onSend, onClose }: { onSend: (text: string) => void; onClose: () => void }): ReactNode {
+  const [v, setV] = useState("");
+  return (
+    <form
+      className="panel chat"
+      onSubmit={(e) => {
+        e.preventDefault();
+        if (v.trim()) onSend(v.trim());
+        onClose();
+      }}
+    >
+      <label className="sr-only" htmlFor="chat-in">
+        Say something to the room
+      </label>
+      <input id="chat-in" autoFocus maxLength={120} value={v} placeholder="Say something (Enter sends, Esc cancels)" onChange={(e) => setV(e.target.value)} onKeyDown={(e) => e.key === "Escape" && onClose()} onBlur={onClose} />
+    </form>
+  );
+}
+
+function Inspect({ s, client, b, youId, host, onDemolish, onClose }: { s: Snapshot; client: GameClient; b: Building | undefined; youId: string; host: boolean; onDemolish: (b: Building) => void; onClose: () => void }): ReactNode {
   if (!b) return null;
   const st = STAGES[s.stage];
   const def = BUILDINGS[b.type];
@@ -649,6 +886,7 @@ function Inspect({ s, b, youId, host, onDemolish, onClose }: { s: Snapshot; b: B
         Status: <strong>{done ? (b.status === "ok" ? "running" : b.status) : `under construction (${Math.round((b.work / (def.build * 10)) * 100)}%) — press E beside it to help`}</strong>
       </p>
       <p className="small">Per tick: {io.join(" · ") || "nothing"}</p>
+      <DcControls b={b} client={client} canTune={b.owner === youId || host} />
       <div className="row">
         {canDemolish && (
           <button type="button" onClick={() => onDemolish(b)}>
@@ -667,12 +905,15 @@ function Help({ onClose, st }: { onClose: () => void; st: (typeof STAGES)[number
       <div className="card help">
         <h2 id="help-h">How to play</h2>
         <ul>
-          <li><kbd>WASD</kbd> or arrows: walk. Wheel or <kbd>+</kbd>/<kbd>-</kbd>: zoom.</li>
-          <li><kbd>E</kbd>/<kbd>Space</kbd> (hold): harvest whatever's in reach, or help raise a building site. Or click a deposit.</li>
-          <li><kbd>1</kbd>–<kbd>6</kbd>: pick a building. A ghost shows where it goes and why it can't. Click, or <kbd>Enter</kbd> for the tile you face. <kbd>Esc</kbd> cancels.</li>
+          <li><kbd>WASD</kbd> or arrows: walk, relative to the camera. <kbd>Shift</kbd>: sprint. <kbd>Space</kbd>: hop (just for show).</li>
+          <li><kbd>C</kbd>: change camera (first person, third person, isometric). First and third person: click the world, then the mouse looks around; <kbd>Esc</kbd> lets the mouse go. Isometric: <kbd>Q</kbd>/<kbd>R</kbd> rotate, wheel or <kbd>+</kbd>/<kbd>-</kbd> zoom.</li>
+          <li><kbd>E</kbd> (hold): harvest what you aim at if it's in reach, otherwise the nearest thing, or help raise a building site. Click: act on what the crosshair (or, in isometric, the pointer) is on. Reach is the same in every camera.</li>
+          <li><kbd>1</kbd>–<kbd>9</kbd>: pick a building. A ghost shows where it goes and why it can't. Click, or <kbd>Enter</kbd>. Right click or <kbd>Esc</kbd> cancels.</li>
+          <li><kbd>Tab</kbd> pack and crafting · <kbd>F</kbd> use what's beside you · <kbd>G</kbd> change the tool in hand.</li>
           <li><kbd>I</kbd> inspect · <kbd>X</kbd> take down (half back) · <kbd>N</kbd> name a place · <kbd>V</kbd> survey the remaining stock · <kbd>P</kbd> photo · <kbd>Shift</kbd>+<kbd>1</kbd>–<kbd>6</kbd> emote.</li>
         </ul>
-        <p>Everything you gather goes into the room's shared stockpile. Buildings remember who built them; only the builder or the host can take one down.</p>
+        <p>What you gather goes into your own pack, which only you can see. Give raw stock to the Cooperative store (Tab) to build the shared works: cottages, power, datacentres. Campfires, workbenches and chests come out of your own pack. Only the builder or the host can take a building down.</p>
+        <p><kbd>T</kbd> talks to the room · <kbd>M</kbd> the World Atlas.</p>
         <p>When every deposit on this world is gone, the room moves on together. There are five worlds.</p>
         <p><strong>{st.name}:</strong> {MECHANIC_HINT[st.mechanic]}</p>
         <button type="button" onClick={onClose} autoFocus>Back to the world</button>
