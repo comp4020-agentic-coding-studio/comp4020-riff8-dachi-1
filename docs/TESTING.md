@@ -38,9 +38,37 @@ What was checked, how, and what it showed. Targets and results are kept apart, a
 - **restart recovery**: a private server on its own data directory is stopped with SIGTERM and restarted; the player rejoins as themselves under a new incarnation and the harvested tile is as they left it
 - **crash recovery**: the same after SIGKILL, once the 5 s save interval has passed
 
+**`spec/play.test.ts`**, personal play, the simulation directly plus the per-player view the server builds:
+
+- harvests land in the harvester's own pack; a held tool multiplies the yield and wears
+- crafting refuses without inputs or a station, says which, and a retried craft applies once
+- personal pieces are paid only from the pack; nothing is built through a standing player; nobody can be walled in
+- chests: locked until shared, two hands on the last stack get one outcome, taking one down bags its contents for its owner alone, bad counts refused
+- what each player is sent never includes another's pack, a token, or a locked chest's contents
+- a carcass is butchered once; the fauna ledger balances; death drops an owner-only bag; an absent player doesn't starve; Mars air runs out outside a dome
+- the town: an overclocked datacentre on a dry store with datacentres first kills a named resident with the cause on record and a memorial; homes first on the same water keeps everyone alive
+- chat is cleaned, capped, rate limited and attributed; only the host can remove someone, who can't rejoin or act and keeps their things
+- a schema-1 room migrates with its stockpile moved once into the store; a backup taken from a live WAL database restores every room with its books balanced
+- regression tests for every finding of the independent review (below)
+
+**`spec/server.test.ts`** also now checks, over real sockets, that two players' harvests land in their own packs and neither is ever sent the other's, and, on a private server whose stdout the test reads, that the log names each action's player by tag and name (`[ROOM] 9ecf49 "Ada" harvest 13,15 -> ok`) and never a token.
+
 **`spec/invariants.test.ts`**, the course's: `/` answers and `/readme/` publishes this README with every heading.
 
-30 tests, all passing locally and against the production Docker image.
+61 tests, all passing locally against the built server.
+
+## The 3D client, in a real browser
+
+Headless Chrome via `agent-browser`, which renders WebGL in software (SwiftShader), so these are correctness checks, not frame-rate evidence. Two separate browser sessions (separate storage, so separate players) shared one rapid-preset room with two playbots:
+
+- all three cameras render every stage (Earth, Mars, the Sun, the Solar System and the Universe, seeded by the renderer subagent); third person, first person (hands, crosshair, "out of reach" hint when aiming past the server's range) and isometric (both players, names, landmarks, animals)
+- walking with real key events, holding `E` to harvest (six harvests, each in the server log under the right tag), crafting a stone axe from the pack panel (it went straight into the hand), building a campfire and a chest from the pack, stashing stone in the chest
+- Bo's browser, after a reconnect, held the chest's owner and access but not its contents; Bo then sent hand-written `take`, `access` and `demolish` commands over his own socket and was refused each time, logged under his tag
+- a server restart under both live sessions: both rejoined as themselves with health, food and pack intact
+- 390×844: no horizontal overflow, but the HUD covers most of the world; it's a desktop game
+- found and fixed in the walkthrough: Tab inside the pack moved focus instead of closing it; nothing said why health was falling (a wolf); hunger was too fast for a busy player
+
+Not measured: frame rate on real hardware, GPU memory over long sessions, and pointer-lock feel with a real mouse. Those need a person at a real machine.
 
 ## Multiplayer playthroughs
 

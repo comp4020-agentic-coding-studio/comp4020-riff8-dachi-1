@@ -8,7 +8,7 @@ browser                                      one Fly machine (shared-cpu-1x, 256
 │ Next.js shell (static)    │   GET /, /play │ server/main.ts (node, type-stripped)  │
 │  app/, client/Game.tsx    │◄──────────────►│  serves out/ (Next export), /readme/  │
 │  React HUD (≤5 Hz)        │                │  POST /api/rooms, GET /api/health     │
-│  Canvas 2D renderer (rAF) │   WebSocket    │  /ws ──► server/rooms.ts               │
+│  Three.js renderer (rAF)  │   WebSocket    │  /ws ──► server/rooms.ts               │
 │  client/net.ts            │◄──────────────►│          one live owner per room      │
 └───────────────────────────┘    /ws         │          shared/sim.ts (pure)         │
                                              │  server/store.ts ──► SQLite on /data  │
@@ -27,23 +27,25 @@ browser                                      one Fly machine (shared-cpu-1x, 256
 ## Choices, and why
 
 - **Next.js as a static export.** The prompt wants Next.js for the shell and a separate long-running service for the simulation. Exporting the shell to static files and serving them from the game server keeps that separation (Next never runs a request handler, let alone the loop) while fitting the course's one-machine, one-port Fly setup. The game is loaded with `next/dynamic` and `ssr: false` from inside a Client Component (`app/play/PlayShell.tsx`), as the [lazy-loading guide](https://nextjs.org/docs/app/guides/lazy-loading) requires, since it touches canvas, WebSocket, AudioContext and localStorage.
-- **Canvas 2D, no engine.** A two-day prototype budget favoured the one renderer with nothing to install, learn or ship. Every asset is a few draw calls in `client/render.ts`, so the visual bible is enforced by one file. Measured frame time in the densest scene tested was about 1.2 ms (see [`TESTING.md`](TESTING.md)), so the renderer has headroom. If the art direction outgrows hand-drawn shapes, PixiJS is the natural swap: `Renderer` is the only module that draws.
-- **`ws` over a room framework.** Rooms, sequencing and deduplication are about 300 lines in `server/rooms.ts`; Colyseus would have hidden exactly the parts the prompt asks to get right.
+- **Three.js, procedural models, no engine.** One scene in `client/render3d.ts` with three camera adapters (first person, third-person chase, orthographic isometric); every model is code in `client/models.ts` with shared geometry and material caches, and repeated terrain and props are instanced. The renderer reads `GameClient.state` in its own frame loop and exposes one targeting interface (`aim()`, `pick()`, `pickBuilding()`, `pickAnimal()`), so every camera sends the same commands and the server's reach rule applies to all of them. It's loaded only on the client, inside the `next/dynamic` boundary. WebGL 1/2 only; no WebGPU requirement.
+- **`ws` over a room framework.** Rooms, sequencing and deduplication are a few hundred lines in `server/rooms.ts`; Colyseus would have hidden exactly the parts the prompt asks to get right.
 - **`node:sqlite`, one row per room.** No native module to build, one file on the volume, a single UPSERT per save.
 
 ## Authority
 
 The server owns every room's state; the browser renders it and sends intentions. All mutation goes through `applyCommand` and `tick` in `shared/sim.ts`, called one at a time on Node's single thread, so every mutation is serialised. Two players placing on the same tile, two builds spending the same balance, two hands on the last unit: whichever command the server reads first wins; the other gets a reason. Payment and occupancy are committed in the same synchronous block with nothing between them that can fail.
 
-Every command is validated server-side: session (the socket's player), membership, stage generation, phase, integer and in-bounds coordinates, finite movement vectors, range (2.2 tiles to harvest, 8 to build), cooldowns, footprint and terrain, affordability, ownership, and string length.
+Every command is validated server-side: session (the socket's player), membership, stage generation, phase, integer and in-bounds coordinates, finite movement vectors, range (2.2 tiles to harvest, 8 to build, per-tool reach to hit), cooldowns, footprint, terrain and bodies in the way, affordability from the actor's own pack (then the Cooperative store for shared works), ownership and chest access, positive whole counts, and string length.
 
-**Movement** is a continuous intent (a direction vector); the server integrates it at 10 Hz. There are no collisions, so the browser predicts its own avatar exactly and eases toward the server's answer, snapping only if more than 1.5 tiles off. Other avatars are interpolated two ticks behind the latest update.
+**Movement** is a continuous intent (a direction vector and a sprint flag); the server integrates it at 10 Hz with `step()` in `shared/sim.ts`: buildings are solid except plazas, axis-separated so bodies slide along walls, and a body already inside something may always move, so nothing can trap anyone. The browser predicts its own avatar with the same `step()` and eases toward the server's answer, snapping only if more than 1.5 tiles off. Other avatars are interpolated two ticks behind the latest update.
+
+**Who owns what.** Each player has a private pack (`RoomState.priv`: items, tools with durability, food, suit air). The old shared stockpile is now the Cooperative store: it grows only by explicit gifts (`donate`) and pays for shared works after the builder's own pack. Chests are owner-only or public. Every transfer (stash, take, loot, butcher, craft) checks permission, range and room and moves both sides in one synchronous step, so two hands on the last stack get one outcome.
 
 **Ticks.** The server steps every room at 10 Hz (checked every 50 ms). After a stall it catches up at most three ticks and drops the rest, so a paused process can't run the economy forward in a burst. The economy runs every 10 ticks (every 2 on the rapid preset).
 
 ## Protocol
 
-Defined in [`shared/protocol.ts`](../shared/protocol.ts), JSON text frames, `PROTOCOL_VERSION = 1`. A client and server on different versions refuse each other ("this page is out of date: reload it").
+Defined in [`shared/protocol.ts`](../shared/protocol.ts), JSON text frames, `PROTOCOL_VERSION = 2`. A client and server on different versions refuse each other ("this page is out of date: reload it").
 
 Client to server:
 
@@ -55,11 +57,11 @@ Client to server:
 Server to client:
 
 - `welcome {v, inc, you, token, snap}`: a full snapshot (state minus other players' tokens and receipts) and its sequence number
-- `delta {seq, gen, tick, players, moves?, tiles?, buildings?, removed?, meta?, log?}`: changes since the previous delta, sent only when something changed, at most once per tick
+- `delta {seq, gen, tick, players, moves?, tiles?, buildings?, removed?, meta?, log?, me?, chests?, animals?, bags?, fauna?, town?}`: changes since the previous delta, sent only when something changed, at most once per tick. `me` is the recipient's own private state and appears only in their copy; `chests` carry contents only to players who may open them
 - `ack {id, ok, reason?}`: for every command except `move`
 - `error {reason}`, `pong {n}`
 
-**Ordering and gaps.** Every delta increments the room's `seq`. A client that sees anything but `seq + 1` asks for a fresh snapshot rather than guessing. On join, any pending changes are flushed to everyone first and the snapshot is taken immediately after, in the same synchronous turn, so the snapshot is exactly the boundary the next delta continues from.
+**Ordering and gaps.** Each connection has its own stream sequence, because each recipient's deltas differ (private state is filtered per player, so a room-wide sequence would show gaps that aren't). A client that sees anything but `seq + 1` asks for a fresh snapshot rather than guessing. On join, any pending changes are flushed to everyone first and the snapshot is taken immediately after, in the same synchronous turn, so the snapshot is exactly the boundary the next delta continues from.
 
 **Duplicates.** The last 64 applied command ids per player are remembered (and saved with the room). A retried id that was applied is acknowledged again without being applied again; a refused command isn't receipted, so retrying it is a real retry. Movement isn't receipted: it's idempotent.
 
@@ -74,11 +76,11 @@ Server to client:
 ## Persistence
 
 - **Store**: `DATA_DIR/plenty.db` (SQLite, WAL), table `rooms(code, schema, state, saved_at)`, the whole `RoomState` as JSON. World, sequence and receipts are in one row, so they can't disagree about what was applied.
-- **Schema**: `SCHEMA_VERSION` in each row; migrations run in order against `PRAGMA user_version` at boot (`server/store.ts`). A row from a different schema version refuses to load rather than load wrongly.
+- **Schema**: `SCHEMA_VERSION` (2) in each row. Table migrations run in order against `PRAGMA user_version` at boot; saved-state migrations (`STATE_MIGRATIONS` in `server/store.ts`) upgrade an older row as it loads. Schema 1 → 2 moves the shared stockpile once into the Cooperative store, gives every remembered player an empty pack, and seeds Earth's animals only on an untouched Earth. A row from a newer schema refuses to load rather than load wrongly.
 - **Save frequency**: every 5 s while a room has changed, immediately when a room empties, immediately at every stage boundary (before anyone is told about it), and for every room on SIGTERM or SIGINT.
 - **Maximum rollback**: 5 s of play after an abrupt crash. A rolled-back command's receipt rolls back with it, so a retry after recovery is treated as new, not wrongly acknowledged as done. The spec kills the server with SIGKILL to check this.
 - **Transitions survive crashes**: the transition state is saved before it's announced, and the next world is a pure function of the saved seed and stage, so a restart during a transition finishes it exactly once with the same map and no doubled carryover.
-- **Backup**: the volume is a single point of failure. `fly volumes snapshots list -a <app>` shows Fly's daily volume snapshots (retained five days by default); restoring one is `fly volumes create data --snapshot-id <id>` and pointing the machine at it. Copying the file off with `fly ssh sftp get /data/plenty.db` is the manual backup.
+- **Backup**: `DATA_DIR=/data node scripts/backup.ts /data/backup.db` (via `fly ssh console`) takes a WAL-consistent copy with `VACUUM INTO` and then loads every room in the copy through the real migrations and checks its ledger, so a backup is known to restore. Copying only `plenty.db` from a live WAL database would miss recent writes. The volume is also a single point of failure: `fly volumes snapshots list -a <app>` shows Fly's daily volume snapshots (retained five days by default); restoring one is `fly volumes create data --snapshot-id <id>` and pointing the machine at it. Copying the file off with `fly ssh sftp get /data/plenty.db` is the manual backup.
 
 ## Rooms, sessions and empty rooms
 
@@ -104,6 +106,6 @@ A room with nobody connected pauses: no ticks, saved, and unloaded after a minut
 | `DATA_DIR` | `./data` | where `plenty.db` lives (`/data` in the image) |
 
 - **Deploy**: CI runs `flyctl deploy --remote-only --ha=false -a <app>` on every push to `main` once the spec passes against the built image.
-- **Logs and status**: `flyctl logs -a <app>`, `flyctl status -a <app>`, `curl https://<app>.fly.dev/api/health`.
+- **Logs and status**: `flyctl logs -a <app>`, `flyctl status -a <app>`, `curl https://<app>.fly.dev/api/health`. Every join, leave and command is one line, `[ROOM] tag "Name" action -> ok` or `-> refused: reason`, with indented follow-ups for what it moved (`build chest #12 paid 4 matter`, `take 3 mineral chest #12 owned by 4f2a1c`). The tag is the first six characters of the player's public id, so two people called "Ada" are still told apart, and no token is ever logged.
 - **Recovering a room**: nothing to do; any visitor loads it from the last save. To inspect one, `fly ssh console -a <app> -C "node -e \"const {DatabaseSync}=require('node:sqlite');const d=new DatabaseSync('/data/plenty.db');console.log(d.prepare('select code,saved_at from rooms').all())\""`.
 - **A room that won't load** (schema mismatch after a bad deploy): roll back the deploy; rows are never rewritten by a server that can't read them.

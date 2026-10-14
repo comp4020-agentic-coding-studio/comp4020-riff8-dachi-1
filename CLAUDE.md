@@ -35,13 +35,15 @@ agent was directed, not for what anyone owes.
 
 # Your harness
 
-Plenty is a multiplayer game: one Node process (`server/`) owns every room's simulation (`shared/sim.ts`) and serves a statically exported Next.js shell (`app/`, `client/`). `README.md` is the player guide; `docs/` holds the design, architecture, decisions and test evidence. Read `docs/ARCHITECTURE.md` before changing the protocol, persistence or deployment.
+Plenty is a multiplayer game: one Node process (`server/`) owns every room's simulation (`shared/sim.ts`) and serves a statically exported Next.js shell (`app/`, `client/`) with a Three.js world (`client/render3d.ts`). `README.md` is the player guide; `docs/` holds the design, architecture, decisions, test evidence and `RELEASE_SCOPE.md` (what's built and what isn't). Read `docs/ARCHITECTURE.md` before changing the protocol, persistence or deployment.
 
 ## What the game must never do
 
 - Let a browser decide an outcome. Clients send intentions; `applyCommand` and `tick` decide, one at a time. Validate every field server-side, whatever the UI allows.
-- Make or lose natural stock off the books. Every family keeps `initial = remaining + extracted + destroyed`, and `ledgerHolds` must stay true on every tick. Inventories are whole numbers and never negative. Salvage stays strictly below cost.
-- Leave a deposit unreachable. Buildings can't cover a deposit with stock left, and nothing blocks movement; keep both true or replace them with another guarantee.
+- Make or lose natural stock off the books. Every family keeps `initial = remaining + extracted + destroyed`, and `ledgerHolds` must stay true on every tick. Animals keep `founded = alive + hunted + starved` and never respawn. Packs, chests and the store are whole numbers and never negative. Salvage stays strictly below cost.
+- Leave a deposit unreachable or a body trapped. Buildings can't cover a deposit with stock left or go up through a player, and `step()` always lets a body inside something walk out.
+- Send anyone another player's pack, or a locked chest's contents. Private state goes only in its owner's copy of a delta (`ch.priv`), and every transfer moves both sides in one synchronous step.
+- Log a token. Audit lines name players by `tag` and name only.
 - Advance a world without its players, or wipe a finished campaign. Empty rooms pause ([ADR 0001](docs/adr/0001-empty-rooms-pause.md)); the ending is permanent and a new campaign is a new room.
 - Accept a write or a WebSocket from another origin, or render user text as anything but text (React children, `textContent`, `fillText`).
 
@@ -53,9 +55,10 @@ Plenty is a multiplayer game: one Node process (`server/`) owns every room's sim
 - React never renders per-entity updates: the renderer reads `GameClient.state` in its own frame loop; the HUD polls at 5 Hz.
 - Shared code is imported with explicit `.ts` extensions and uses erasable TypeScript only, because node runs `server/` and `shared/` with type stripping.
 - `pnpm check` passes before a commit. It needs a running server: `pnpm build && pnpm start`, or `APP_URL`.
+- Shared code that the browser imports must not import `node:` modules; `server/` may import `shared/`, never the reverse.
 
 ## Working on it
 
 - `node scripts/playbot.ts <ROOM> [url] [name]` fills a room with a bot that plays; use bots plus a browser to see later worlds and dense scenes.
-- Balance lives in `shared/content.ts`. Re-measure pacing after changing it (hand-harvest-only bots, normal pace) and update `docs/DESIGN.md`.
+- Balance lives in `shared/content.ts`. Re-measure pacing after changing it (`node scripts/campaign-sim.ts 2 normal`) and update `docs/DESIGN.md` and `docs/RELEASE_SCOPE.md`.
 - When you change behaviour, update the doc that describes it in the same commit.

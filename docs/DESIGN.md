@@ -27,7 +27,8 @@ Explore, gather by hand, choose a tile, build, gain a capability, meet a new dem
 Everything is whole numbers, defined in [`shared/content.ts`](../shared/content.ts). Units are normalised per world rather than scaled up: a world holds about a thousand units whatever it is, so a galaxy and a grove are both "a deposit of about sixteen" and no large-number representation is needed. The scale is told by the names, the map and the camera, not by digits.
 
 - **Natural stock**: deposits on tiles, finite. Three families per world (matter, mineral, coolant), relabelled per world: timber, stone and fresh water on Earth; plasma, magnetics and shade on the Sun.
-- **Inventory**: the room's single shared stockpile. Spending is atomic and can't go negative.
+- **Packs**: each player's own, private (36 slots of 50). Hand harvesting fills your pack; tools multiply what a swing takes. Nobody else is sent its contents.
+- **The Cooperative store**: what used to be the shared stockpile. It grows only when someone gives to it (`donate`), and pays for shared works after the builder's own pack. Personal pieces (campfire, workbench, chest) are only ever paid from the pack. The tension of the old shared stockpile is still there, but now somebody chose to put each unit in.
 - **Capacity**: power, compute and workers are flows recomputed every economy tick, never stored. Unused power is lost. The exception is the Bottled Sun, a stored energy reserve (below).
 
 | Building | Job | Needs | Gives |
@@ -52,6 +53,25 @@ Each building has a different job; none is a bigger number of another. The decis
 **Idle states are text, not colour.** Every idle building shows a `!` (or `~` when throttled) and its inspect panel says why: "idle: no workers (build homes)", "idle: outside a dome's air". The stockpile panel names the commonest reason across the whole machine.
 
 **Bad decisions are recoverable.** Hand harvesting needs nothing, so the room can always gather. Taking a building down refunds half its cost, rounded down, which is always strictly less than it cost, so there's no refund loop. Spent deposits become buildable ground. Nothing invents resources: recovery spends real stock.
+
+## Personal play
+
+Defined in `shared/content.ts` (`ITEMS`, `TOOLS`, `RECIPES`, `ANIMALS`) and checked in `shared/sim.ts`.
+
+- **First minutes.** Gather by hand, make a stone axe (3 timber, 2 stone) and pick, put down a campfire and a chest, cook. A useful tool is a minute in; a fire and a locked chest of your own a few more.
+- **Tools** come in three tiers: stone (axe, pick, bucket, spear), worked at a workbench (iron axe and pick, bow and arrows, hide coat), and the powered drill, assembled only beside a running datacentre. The drill strips four or five times as fast, which is exactly the temptation: the town's best tool needs the machine that drinks the pond.
+- **Hunting**: six species placed once from the seed in their habitats (deer and boar in groves, rabbits in meadow, herons and fish in the pond, wolves that bite). Hits are range- and cooldown-checked on the server; a bow uses arrows; a carcass is butchered once. Hides make the bow and coat.
+- **Wildlife is finite.** Nothing respawns or breeds; the fauna has its own ledger (founded = alive + hunted + starved). An animal whose habitat is used up anywhere on the map starves, and it's logged. The pond's heron is named, so draining the pond or shooting it lands in the archive. Breeding would need a feed budget that the finite world can account for; that's not built.
+- **Survival**: health and hunger everywhere, suit air on Mars (refilled inside a working dome), heat damage at the Sun past the limit. Only connected players get hungry. Death drops a bag where you fell, yours alone for five minutes, then anyone's; the coat stays on; you wake at the spawn fed enough to walk back.
+- **Evacuation.** At a boundary your tools, food, hides and arrows travel; the raw stock of the spent world in packs, chests and bags stays behind and the archive says how much. Residents travel asleep and wake as homes are built.
+
+## The town and its water
+
+Cottages now hold residents, not an abstract worker count: two move in when a home is finished, more arrive slowly while homes are served and watered. The workers machines need are those residents.
+
+Homes drink a unit of the world's coolant per ten residents every fifth economy tick; datacentres drink every tick. When the store can't cover both, the host's **water priority** decides: homes first, shared evenly, or datacentres first. Each datacentre runs **underclocked** (half the compute, a quarter of the water and power), normal, or **overclocked** (nearly twice the compute for three times the water and twice the power and heat).
+
+The harm is a chain, not a dice roll: more compute wants more water; the priority decides who goes short; the homes' dry spell counts up on the town panel, with a warning halfway that names how much the datacentres took; and only a long unbroken shortage kills a resident, named, with the cause in the town's record and the archive and a memorial stone set beside the datacentre. Homes first or an underclock stops it. Every coefficient is a game rule, not a real-world figure, and the UI says so.
 
 ## Environment
 
@@ -92,23 +112,23 @@ Each world is data in `STAGES` plus one mechanic switch in the economy tick. Map
 - The host is whoever created the room, or the longest-connected player when the host is away. The host can take down anyone's building and render down World Engines.
 - A departed player's buildings stay up and keep working, under their name; they come back as themselves via their browser's token.
 - Late joiners land in the current world at the spawn point and can do everything at once.
-- Safeguards: no chat (emotes only, so no user text except names, which are cleaned and capped), only builders and hosts can demolish, 40 messages a second per connection, 2 KB per message, eight players per room.
+- Possessions are private; infrastructure is shared or owned; the environment is collective.
+- Safeguards: short text chat (120 characters, one line every two seconds, rendered as text, mutable per listener), the host can remove a player (who can't rejoin, and keeps their things), only builders and hosts can demolish or retune, chests are owner-only until shared, 40 messages a second per connection, 2 KB per message, eight players per room.
 
 ## Pacing
 
-Measured headless with hand-harvest-only bots, the slowest honest strategy (machines are faster):
+On the normal pace every deposit is four times as deep as its stage data (`PACES.normal.stockScale`), fixed when each world is made, so a world now asks for real time with tools rather than ten minutes of tapping. Measured with `node scripts/campaign-sim.ts`, two hand-harvest-only bots that give everything away and never cook (the slowest honest strategy):
 
-| Players | Earth ends | Campaign ends |
-| --- | --- | --- |
-| 1 | 15 min | 80 min |
-| 2 | 8 min | 41 min |
-| 4 | 4 min | 21 min |
+| Pace | Players | Each world | Whole campaign |
+| --- | --- | --- | --- |
+| normal | 2 | 31--34 min | 163 min |
+| rapid (testing preset) | 2 | 1.3--1.8 min | 8 min |
 
-Bots don't wander, admire or argue, and machines speed things up, so the target for an ordinary campaign is **about an hour for two to four players, roughly ten to fifteen minutes a world**, spanning sessions if they like (an empty room pauses; see the [ADR](adr/0001-empty-rooms-pause.md)). Progress scales with player count on purpose: more hands consume faster, and the stock doesn't grow to compensate. The rapid preset finishes a solo campaign in about ten minutes and a two-bot-plus-machines campaign in about six.
+Tools multiply a swing two to five times and harvesters work unattended, so a real group should be faster; the target is two to four hours across sessions (an empty room pauses; see the [ADR](adr/0001-empty-rooms-pause.md)). Party size isn't compensated on purpose: more hands consume faster.
 
 ## Visual and audio bible
 
-- **Camera**: 2:1 isometric (tiles 64×32 world units), follows your avatar, zoom 0.5--2.2.
+- **Camera**: one Three.js scene, three views: first person (pointer lock, crosshair, your tool in hand), third-person chase (the default), and isometric (orthographic, zoom, 90° rotation). One tile is one world unit. Switching only moves the camera.
 - **Forms**: rounded, soft dark outline (`rgba(40,30,40,0.55)`), light from the upper left (left faces lighter than right).
 - **Palette**: one per world, a "lush" and a "dead" ground colour that tiles interpolate between by life; deposits in each world's three family colours.
 - **Characters**: round little people on Earth, suited on Mars, drones at the Sun, probes in the Solar System, glowing wisps in the Universe; always in the player's colour with a name label (and "(you)"), facing their direction, bobbing when walking, swinging a tool when harvesting.
